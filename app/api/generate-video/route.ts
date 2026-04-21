@@ -1,0 +1,70 @@
+import { NextResponse } from "next/server";
+import { getClient, updateAd } from "@/lib/db";
+import { generateVideo, routeVideo, writeVideoPrompt } from "@/lib/video-provider";
+
+/**
+ * Generate a video variant for an existing ad.
+ *
+ *   POST /api/generate-video
+ *   { clientId, adId, aspectHint?: "1:1" | "4:5" | "9:16" | "16:9" }
+ *
+ * Writes a video prompt (Claude), routes to the best provider, calls it, and
+ * saves the resulting video on the ad record. Video generation is a distinct
+ * step from image generation because it's expensive (dollars + minutes) and
+ * we don't want every initial ad-battery run to burn that budget.
+ */
+export async function POST(req: Request) {
+  const { clientId, adId, aspectHint } = (await req.json()) as {
+    clientId: string;
+    adId: string;
+    aspectHint?: "1:1" | "4:5" | "9:16" | "16:9";
+  };
+  const client = await getClient(clientId);
+  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const ad = client.ads.find((a) => a.id === adId);
+  if (!ad) return NextResponse.json({ error: "Ad not found" }, { status: 404 });
+  if (!client.analysis) {
+    return NextResponse.json(
+      { error: "Run the website analysis first." },
+      { status: 400 },
+    );
+  }
+
+  // 1. Write a video prompt that fits the ad's angle + hypothesis
+  const { videoPrompt } = await writeVideoPrompt({
+    angle: ad.creative.angle,
+    hypothesis: ad.creative.hypothesis,
+    brandVoice: client.analysis.voice,
+    offer: client.offer,
+    imagePrompt: ad.creative.imagePrompt,
+  });
+
+  // 2. Route to the best provider
+  const decision = await routeVideo({
+    videoPrompt,
+    angle: ad.creative.angle,
+    brandVoice: client.analysis.voice,
+    aspectHint,
+  });
+
+  // 3. Generate (polls until done or placeholder on no-key)
+  const video = await generateVideo({ decision });
+
+  // 4. Persist
+  const updated = await updateAd(client.id, ad.id, (a) => ({
+    ...a,
+    mediaKind: "video",
+    creative: { ...a.creative, videoPrompt: decision.refinedPrompt },
+    videoUrl: video.url,
+    videoProvider: video.provider,
+    videoReason: decision.reason,
+    videoDurationSec: video.durationSec,
+  }));
+
+  return NextResponse.json({
+    ad: updated,
+    decision,
+    mock: video.mock,
+    needsEditorPass: decision.needsEditorPass,
+  });
+}

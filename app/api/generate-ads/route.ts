@@ -66,6 +66,7 @@ export async function POST(req: Request) {
       clientId: client.id,
       createdAt: new Date().toISOString(),
       status: "draft",
+      mediaKind: "image",
       creative: {
         ...creative,
         imagePrompt: image.decision.refinedPrompt,

@@ -1,36 +1,48 @@
 # Adwise
 
 Internal Meta Ads tool. Paste a client website, pick a goal, get a data-backed
-test battery, launch it to Meta, and let the thing tune itself daily. Comes
-with a chat companion that answers the question, not the LinkedIn version.
+test battery (images **or** video), launch it to Meta, and let the thing tune
+itself daily. Comes with a chat companion that answers the question, not the
+LinkedIn version.
 
 ## What it actually does
 
-1. **Reads the client's site.** Fetches the homepage, extracts the text, and
-   briefs Claude Opus 4.7 on what the business actually sells, who's buying, and
-   what'll bite us (compliance, thin landing page, bad offer, whatever).
-2. **Generates a 5-variant test battery.** Not a brainstorm — a hypothesis-
-   driven test plan. Each variant pulls a different lever (pain-point, social
-   proof, contrarian take, outcome-specific, curiosity) and says why it should
-   work for *this* audience.
+1. **Reads the client's site.** Fetches the homepage and briefs Claude Opus 4.7
+   on what the business actually sells, who's buying, and what'll bite us. Two
+   reader paths: a fast `fetch`-based one (default) and an optional headless
+   Chromium pass via Playwright for JS-rendered SPAs. The app upgrades
+   automatically when the headless dep is installed.
+2. **Generates a 5-variant test battery.** Each variant pulls a different lever
+   (pain-point, social proof, contrarian, outcome-specific, curiosity) and
+   says *why* it should work for *this* audience.
 3. **Pairs each ad with an image from the best model for the job.**
    - **Ideogram 3.0** for ads with text rendered in the image (posters).
    - **FLUX 1.1 Pro Ultra** for photorealistic product / lifestyle.
    - **Google Imagen 4** for illustrations / editorial / stylized.
    - **OpenAI gpt-image-1** as a forgiving generalist fallback.
-   Claude picks per brief and the decision is persisted with the ad, so the
-   router learns which model wins for which client over time.
-4. **Launches to Meta (always paused).** Creates the campaign + ad set + ads via
-   the Marketing API. Everything ships in `PAUSED` state. Nobody spends a cent
+4. **Generates video ads on demand, with a built-in editor.** Click "+ Video
+   variant" on any ad card. Claude writes a video prompt from the ad's angle,
+   routes to the best video model, and pulls back a clip:
+   - **Veo 3** — photoreal ads with native audio (product, lifestyle).
+   - **Sora 2** — longer clips with narrative and audio.
+   - **Runway Gen-4** — cinematic / editorial, strong camera control.
+   - **Kling 2** — physics (pouring, splashing, fabric, food).
+
+   Because 2026 video gen is *usable* but not reliable enough to ship raw, the
+   raw clip opens in an in-browser editor (`/clients/[id]/ads/[adId]/edit`)
+   where you trim, crop to ad-spec aspect ratios (1:1 / 4:5 / 9:16 / 16:9),
+   overlay the headline + CTA, mute or keep the soundtrack, and export a
+   final webm. Canvas + MediaRecorder export — no FFmpeg.wasm dependency.
+5. **Launches to Meta (always paused).** Creates the campaign + ad set + ads
+   via the Marketing API. Everything ships `PAUSED`. Nobody spends a cent
    until a human flips it live in Ads Manager.
-5. **Daily optimization pass.** Pulls the last 7 days of metrics, judges each
-   ad against the goal-appropriate primary metric (CPA for conversions, CPC for
-   traffic, CTR for awareness), and produces a 2-paragraph plain-English report
-   plus specific actions: pause, kill, scale up, scale down, duplicate and tweak.
-   Run it manually or wire it to a cron.
-6. **Chat companion.** Streams answers from Claude with the client's full
-   account loaded in context. Ask "is ad 3 worth keeping?" and get a verdict,
-   not a menu.
+6. **Daily optimization pass.** Pulls the last 7 days of metrics, judges each
+   ad against the goal-appropriate primary metric (CPA for conversions, CPC
+   for traffic, CTR for awareness), and produces a 2-paragraph plain-English
+   report plus specific actions: pause, kill, scale up, scale down, duplicate
+   and tweak. Runs manually **or** on a daily schedule (see *Daily cron* below).
+7. **Chat companion.** Streams answers from Claude with the client's full
+   account loaded in context. Ask "is ad 3 worth keeping?" and get a verdict.
 
 ## Voice & tone (don't skip this)
 
@@ -55,10 +67,12 @@ surface inherits it.
 - **Next.js 14** (App Router, TypeScript, React Server Components where useful)
 - **Tailwind CSS** for styles; design tokens in `globals.css`
 - **Anthropic SDK** with `claude-opus-4-7`, adaptive thinking, `effort: high`
-  on the analysis/generation/optimization calls, `effort: medium` on chat
+  on analysis/generation/optimization, `effort: medium` on chat
 - **Meta Marketing API** via thin wrapper in `lib/meta.ts`
-- **File-backed JSON** persistence in `.data/clients.json`. Swap to Postgres
-  when you're bored. The `lib/db.ts` interface is three async functions.
+- **Persistence**: JSON file by default (dev). Set `DATABASE_URL` and install
+  `pg` to switch to Postgres — schema is auto-applied on first use.
+- **Headless browser (optional)**: Playwright for SPAs — lazy-loaded only if
+  installed; the base project doesn't require the 200MB browser binary.
 
 ## Setup
 
@@ -75,72 +89,129 @@ Open http://localhost:3000 and add a client.
 
 | Env var | What it does | Required? |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | All the thinking — analysis, ad gen, optimization, chat, image routing | Yes |
-| `META_ACCESS_TOKEN` + `META_AD_ACCOUNT_ID` + `META_PAGE_ID` | Launch real ads. Without these, the app runs in "mock" mode and still demos the full flow | No (mock mode works) |
+| `ANTHROPIC_API_KEY` | All the thinking — analysis, ad gen, optimization, chat, image/video routing | Yes |
+| `META_ACCESS_TOKEN` + `META_AD_ACCOUNT_ID` + `META_PAGE_ID` | Launch real ads. Without these, mock mode tagged `mock: true` | No |
 | `IDEOGRAM_API_KEY` | Best for text-in-image ad creatives | Optional |
 | `BFL_API_KEY` | Best for photoreal product/lifestyle shots | Optional |
-| `GOOGLE_API_KEY` | Best for illustration/editorial | Optional |
-| `OPENAI_API_KEY` | Fallback generalist image model | Optional |
+| `GOOGLE_API_KEY` | Imagen 4 (images) + Veo 3 (video) | Optional |
+| `OPENAI_API_KEY` | gpt-image-1 (images) + Sora 2 (video) | Optional |
+| `RUNWAY_API_KEY` | Runway Gen-4 (video) | Optional |
+| `KLING_API_KEY` | Kling 2 (video) | Optional |
+| `DATABASE_URL` | Postgres connection string | Optional (JSON fallback) |
+| `USE_HEADLESS_SITE_READER=1` | Use Playwright for SPA site reads | Optional |
+| `CRON_SECRET` | Protects `/api/cron/optimize-all` | Required for cron |
 
-Without any image keys, the app still routes briefs through Claude and
-generates deterministic SVG placeholders that clearly show which provider
+Without image or video keys, the app still routes briefs through Claude and
+generates clearly-labeled SVG placeholders tagged with the provider that
 *would* have been used. Add keys when you're ready to spend money.
+
+## Daily cron
+
+Hit `GET /api/cron/optimize-all` on a schedule with
+`Authorization: Bearer $CRON_SECRET`. The endpoint runs `POST /api/optimize`
+with `apply: true` for every client that has live ads and returns a JSON
+summary.
+
+**Vercel:** `vercel.json` is already wired to run it at 14:00 UTC daily.
+Set `CRON_SECRET` in the Vercel dashboard — Vercel's cron hits the endpoint
+with that token automatically.
+
+**Anywhere else** (GitHub Actions, a box with crond, a cheap scheduler):
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://your-host.example.com/api/cron/optimize-all
+```
+
+## Postgres
+
+Set `DATABASE_URL` to switch off the JSON file:
+
+```bash
+npm install pg
+# schema auto-applies on first use — no migrations to run
+```
+
+Schema is three JSONB-backed tables (`clients`, `ads`, `optimization_logs`),
+so app types match the JSON adapter exactly. See `lib/db-postgres.ts`. To
+go back to JSON, unset `DATABASE_URL`.
+
+## Headless site reader (for SPAs)
+
+The default fetch-based reader catches most marketing sites. For JS-heavy
+SPAs (Shopify Hydrogen, Remix, pure React), install Playwright:
+
+```bash
+npm install playwright
+npx playwright install chromium
+```
+
+Then either set `USE_HEADLESS_SITE_READER=1` to always use it, or leave it
+unset — the default reader detects SPA markers and upgrades automatically
+when Playwright is available.
 
 ## File layout
 
 ```
 app/
-  layout.tsx                     shell + nav + footer
-  page.tsx                       dashboard home
-  globals.css                    design tokens + tiny component classes
+  layout.tsx                                shell + nav + footer
+  page.tsx                                  dashboard home
+  globals.css                               design tokens
   clients/
-    page.tsx                     client list
-    new/page.tsx                 intake form (6 fields)
-    [id]/page.tsx                server entry
-    [id]/workspace.tsx           the 4-step workspace + chat
+    page.tsx                                client list
+    new/page.tsx                            intake form (6 fields)
+    [id]/page.tsx                           server entry
+    [id]/workspace.tsx                      4-step workspace + chat
+    [id]/ads/[adId]/edit/page.tsx           video editor entry
+    [id]/ads/[adId]/edit/editor.tsx         in-browser video editor
   api/
-    clients/                     CRUD
-    analyze/                     read site → website analysis
-    generate-ads/                analysis → 5 creatives + 5 images
-    launch-ads/                  creatives → Meta campaign + ad set + ads
-    optimize/                    metrics → plain-English report + actions
-    chat/                        streaming Claude chat with account context
+    clients/                                CRUD
+    analyze/                                read site → website analysis
+    generate-ads/                           analysis → 5 creatives + 5 images
+    generate-video/                         add a video variant to an ad
+    save-edited-video/                      receives blob from editor, stores it
+    launch-ads/                             creatives → Meta campaign/ad set/ads
+    optimize/                               metrics → report + actions
+    cron/optimize-all/                      daily cron target
+    chat/                                   streaming Claude chat
 components/
-  AdCard.tsx                     single ad preview with metrics
-  ChatPanel.tsx                  streaming chat UI
-  ReportBlock.tsx                TL;DR + expandable body
+  AdCard.tsx                                ad preview (image or video) + actions
+  ChatPanel.tsx                             streaming chat UI
+  ReportBlock.tsx                           TL;DR + expandable body
 lib/
-  anthropic.ts                   SDK wrapper (askJson + streamChat)
-  db.ts                          file-backed JSON persistence
-  image-provider.ts              router + 4 provider clients + placeholder
-  meta.ts                        Meta Marketing API wrapper (with mock mode)
-  prompts.ts                     VOICE_GUIDE + 5 system prompts
-  site-reader.ts                 homepage fetch + text extraction
-  types.ts                       shared types
+  anthropic.ts                              SDK wrapper (askJson + streamChat)
+  db.ts                                     facade selecting postgres or json
+  db-json.ts                                file-backed adapter
+  db-postgres.ts                            pg adapter, auto-migrates
+  image-provider.ts                         router + 4 image providers
+  video-provider.ts                         router + 4 video providers
+  meta.ts                                   Meta Marketing API wrapper
+  prompts.ts                                VOICE_GUIDE + all system prompts
+  site-reader.ts                            fetch-based reader + upgrade path
+  site-reader-headless.ts                   optional Playwright reader
+  types.ts                                  shared types
+vercel.json                                 daily cron schedule
 ```
 
 ## Extending
 
-**New ad angle?** Add it to the system prompt in `lib/prompts.ts` under
-`AD_GENERATION_SYSTEM`. One line.
+**New ad angle?** Add it to `AD_GENERATION_SYSTEM` in `lib/prompts.ts`.
 
-**New image provider?** Add a case to `generateImage` in `lib/image-provider.ts`
-and an option to the `IMAGE_ROUTER_SYSTEM` prompt. Claude will start routing to
-it automatically.
+**New image or video provider?** Add a case to `generateImage` or
+`generateVideo` and an option to the matching router system prompt. Claude
+will start routing to it automatically.
 
-**Different voice?** Edit `VOICE_GUIDE` in `lib/prompts.ts`. That's it.
+**Different voice?** Edit `VOICE_GUIDE`.
 
-**Real database?** The three functions you need are `listClients`, `getClient`,
-and `saveClients` in `lib/db.ts`. Everything else composes on those.
-
-**Daily cron for optimization?** Hit `POST /api/optimize` with
-`{ clientId, apply: true }` on a schedule. That's the whole integration.
+**Swap MediaRecorder export for FFmpeg.wasm?** Replace `exportToBlob` in
+`app/clients/[id]/ads/[adId]/edit/editor.tsx`. Everything else stays the same.
 
 ## Known limits
 
-- **JS-rendered sites** (SPAs) give us thin HTML. We detect and call it out in
-  the analysis. For those, add a headless browser or have the user paste copy.
-- **Targeting** starts broad (US 18-65, FB + IG). Meta's algo prefers that in
-  recent API versions. Dial in via data, not vibes.
-- **Mock mode** is obvious in the UI — every mock-backed ID is prefixed `mock_`
-  and the Meta launch response includes `metaConfigured: false`.
+- **Mock mode is obvious in the UI** — any mock-backed ID is prefixed `mock_`,
+  and placeholder images/videos are labeled with the provider that would have
+  run.
+- **Export is webm**, not mp4. Meta accepts webm for ads. If you need mp4,
+  swap in FFmpeg.wasm at the export boundary — single function to replace.
+- **Targeting** starts broad (US 18-65, FB + IG) because Meta's algo prefers
+  that on recent API versions. Dial in via data, not vibes.

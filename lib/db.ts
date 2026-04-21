@@ -1,49 +1,37 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import type { AdRecord, ClientRecord, OptimizationLog } from "./types";
+/**
+ * DB facade. If DATABASE_URL is set, we delegate to the Postgres adapter.
+ * Otherwise we use the JSON file adapter, which is perfect for local dev and
+ * single-user internal tools.
+ *
+ * The two adapters export the exact same function signatures, so switching
+ * between them is a one-env-var change.
+ */
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
+import * as jsonAdapter from "./db-json";
+import * as pgAdapter from "./db-postgres";
+import type {
+  AdRecord,
+  ClientRecord,
+  OptimizationLog,
+} from "./types";
 
-async function ensureFile() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(CLIENTS_FILE);
-  } catch {
-    await fs.writeFile(CLIENTS_FILE, "[]", "utf8");
-  }
-}
+const usePostgres = !!process.env.DATABASE_URL;
+const backend = usePostgres ? pgAdapter : jsonAdapter;
 
 export async function listClients(): Promise<ClientRecord[]> {
-  await ensureFile();
-  const raw = await fs.readFile(CLIENTS_FILE, "utf8");
-  return JSON.parse(raw) as ClientRecord[];
+  return backend.listClients();
 }
 
 export async function getClient(id: string): Promise<ClientRecord | null> {
-  const all = await listClients();
-  return all.find((c) => c.id === id) ?? null;
-}
-
-export async function saveClients(clients: ClientRecord[]): Promise<void> {
-  await ensureFile();
-  await fs.writeFile(CLIENTS_FILE, JSON.stringify(clients, null, 2), "utf8");
+  return backend.getClient(id);
 }
 
 export async function upsertClient(client: ClientRecord): Promise<void> {
-  const all = await listClients();
-  const idx = all.findIndex((c) => c.id === client.id);
-  if (idx >= 0) all[idx] = client;
-  else all.push(client);
-  await saveClients(all);
+  return backend.upsertClient(client);
 }
 
 export async function addAd(clientId: string, ad: AdRecord): Promise<void> {
-  const all = await listClients();
-  const c = all.find((x) => x.id === clientId);
-  if (!c) throw new Error("client not found");
-  c.ads.push(ad);
-  await saveClients(all);
+  return backend.addAd(clientId, ad);
 }
 
 export async function updateAd(
@@ -51,27 +39,20 @@ export async function updateAd(
   adId: string,
   update: (ad: AdRecord) => AdRecord,
 ): Promise<AdRecord> {
-  const all = await listClients();
-  const c = all.find((x) => x.id === clientId);
-  if (!c) throw new Error("client not found");
-  const idx = c.ads.findIndex((a) => a.id === adId);
-  if (idx < 0) throw new Error("ad not found");
-  c.ads[idx] = update(c.ads[idx]);
-  await saveClients(all);
-  return c.ads[idx];
+  return backend.updateAd(clientId, adId, update);
 }
 
 export async function appendOptimization(
   clientId: string,
   log: OptimizationLog,
 ): Promise<void> {
-  const all = await listClients();
-  const c = all.find((x) => x.id === clientId);
-  if (!c) throw new Error("client not found");
-  c.optimizations.unshift(log);
-  await saveClients(all);
+  return backend.appendOptimization(clientId, log);
 }
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function dbBackend(): "postgres" | "json" {
+  return usePostgres ? "postgres" : "json";
 }

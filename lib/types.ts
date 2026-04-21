@@ -49,8 +49,33 @@ export interface AdCreative {
   cta: string;
   destinationUrl: string;
   imagePrompt: string; // description an image tool could use
+  videoPrompt?: string; // description a video tool could use (sibling of imagePrompt)
   angle: string; // "which lever are we pulling"
   hypothesis: string; // what we're testing and why
+}
+
+export type AdMediaKind = "image" | "video";
+
+export interface TextOverlay {
+  id: string;
+  text: string;
+  position: "top" | "middle" | "bottom";
+  align: "left" | "center" | "right";
+  sizePct: number; // font size as % of canvas height
+  colorHex: string;
+  bgHex: string; // "transparent" for no background
+  fromSec: number;
+  toSec: number;
+}
+
+export interface EditorState {
+  aspect: "1:1" | "4:5" | "9:16" | "16:9";
+  trimStart: number;
+  trimEnd: number; // seconds
+  overlays: TextOverlay[];
+  showCtaButton: boolean;
+  mutedAudio: boolean;
+  updatedAt: string;
 }
 
 export interface AdRecord {
@@ -59,9 +84,16 @@ export interface AdRecord {
   createdAt: string;
   status: AdStatus;
   creative: AdCreative;
+  mediaKind: AdMediaKind;
   imageUrl?: string;
   imageProvider?: string;
   imageReason?: string;
+  videoUrl?: string; // raw generated video (one-shot)
+  videoProvider?: string;
+  videoReason?: string;
+  videoDurationSec?: number;
+  editedVideoUrl?: string; // user-edited, uploaded back after editor export
+  editorState?: EditorState;
   metaCampaignId?: string;
   metaAdSetId?: string;
   metaAdId?: string;
