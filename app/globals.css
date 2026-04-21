@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap");
+
+:root {
+  --bg: #F4F1EA;
+  --ink: #1a1a1a;
+  --muted: #5f5b54;
+  --line: #d9d2c4;
+  --terracotta: #C45A3F;
+  --moss: #4A6B3A;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.font-display {
+  font-family: "Fraunces", Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: transform 0.05s ease, opacity 0.15s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--ink); color: var(--bg); }
+.btn-primary:hover { opacity: 0.92; }
+.btn-ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.btn-ghost:hover { background: #fffdf8; }
+.btn-danger { background: var(--terracotta); color: white; }
+
+.input, .textarea, .select {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+.input:focus, .textarea:focus, .select:focus {
+  outline: 2px solid var(--terracotta);
+  outline-offset: -1px;
+}
+
+.label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #eee6d3;
+  color: var(--ink);
+}
+.pill-green { background: #e0ead3; color: #2e4a1f; }
+.pill-amber { background: #f5e1bb; color: #6b4a12; }
+.pill-red { background: #f2d3cb; color: #6b2415; }
+
+.prose-report h3 {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+}
+.prose-report p { margin-bottom: 0.6rem; line-height: 1.55; }
+.prose-report ul { margin-bottom: 0.7rem; padding-left: 1.1rem; }
+.prose-report li { margin-bottom: 0.25rem; list-style: disc; }
+.prose-report code { background: #eee6d3; padding: 0.1rem 0.35rem; border-radius: 4px; }
