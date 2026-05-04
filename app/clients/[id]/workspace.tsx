@@ -64,11 +64,13 @@ export default function ClientWorkspace({
     }
   }
 
-  async function runGenerate() {
+  async function runGenerate(platform: "meta" | "google" = "meta") {
     setBusy("generate");
     setError(null);
     try {
-      const res = await fetch("/api/generate-ads", {
+      const path =
+        platform === "google" ? "/api/generate-google-ads" : "/api/generate-ads";
+      const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: client.id }),
@@ -82,11 +84,13 @@ export default function ClientWorkspace({
     }
   }
 
-  async function runLaunch(adIds: string[]) {
+  async function runLaunch(adIds: string[], platform: "meta" | "google" = "meta") {
     setBusy("launch");
     setError(null);
     try {
-      const res = await fetch("/api/launch-ads", {
+      const path =
+        platform === "google" ? "/api/launch-google-ads" : "/api/launch-ads";
+      const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: client.id, adIds }),
@@ -122,6 +126,14 @@ export default function ClientWorkspace({
     () => client.ads.filter((a) => a.status === "draft"),
     [client.ads],
   );
+  const draftMeta = useMemo(
+    () => draftAds.filter((a) => (a.platform ?? "meta") === "meta"),
+    [draftAds],
+  );
+  const draftGoogle = useMemo(
+    () => draftAds.filter((a) => a.platform === "google"),
+    [draftAds],
+  );
   const launchedAds = useMemo(
     () => client.ads.filter((a) => a.status !== "draft" && a.status !== "killed"),
     [client.ads],
@@ -134,13 +146,36 @@ export default function ClientWorkspace({
           <div className="flex items-center gap-3 flex-wrap">
             <Link href="/clients" className="text-sm text-[color:var(--muted)] hover:underline">← Clients</Link>
             <span className="pill">{client.goal.replace("_", " ")}</span>
-            {client.metaAdAccountId ? (
+            {client.metaAdAccountId && client.metaOAuth ? (
+              <span className="pill pill-green">
+                Meta · OAuth · {client.metaAccountName ?? client.metaOAuth.userName}
+              </span>
+            ) : client.metaAdAccountId ? (
               <span className="pill pill-green">
                 Meta connected{client.metaAccountName ? ` · ${client.metaAccountName}` : ""}
               </span>
             ) : (
-              <span className="pill pill-amber">Mock mode — no Meta config</span>
+              <span className="pill pill-amber">Meta — mock mode</span>
             )}
+            {client.googleAds?.customerId ? (
+              <span className="pill pill-green">
+                Google · {client.googleAds.customerName ?? client.googleAds.customerId}
+              </span>
+            ) : (
+              <span className="pill pill-amber">Google — not connected</span>
+            )}
+            <Link
+              href={`/clients/${client.id}/connect-meta`}
+              className="text-xs underline text-[color:var(--muted)]"
+            >
+              {client.metaOAuth ? "Manage Meta" : "+ Meta"}
+            </Link>
+            <Link
+              href={`/clients/${client.id}/connect-google`}
+              className="text-xs underline text-[color:var(--muted)]"
+            >
+              {client.googleOAuth ? "Manage Google" : "+ Google"}
+            </Link>
           </div>
           <h1 className="font-display text-3xl font-semibold mt-2">{client.name}</h1>
           <p className="text-[color:var(--muted)]">
@@ -201,11 +236,32 @@ export default function ClientWorkspace({
           disabledHint="Analyze the site first. We don't guess."
           children={
             draftAds.length > 0 ? (
-              <div className="grid md:grid-cols-2 gap-3">
-                {draftAds.map((ad) => (
-                  <AdCard key={ad.id} ad={ad} />
-                ))}
-              </div>
+              <>
+                {draftMeta.length > 0 && (
+                  <>
+                    <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold mt-1 mb-2">
+                      Meta drafts
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {draftMeta.map((ad) => (
+                        <AdCard key={ad.id} ad={ad} />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {draftGoogle.length > 0 && (
+                  <>
+                    <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold mt-4 mb-2">
+                      Google drafts (Responsive Search Ads)
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {draftGoogle.map((ad) => (
+                        <AdCard key={ad.id} ad={ad} />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
             ) : launchedAds.length > 0 ? (
               <p className="text-[color:var(--muted)]">
                 All generated variants have been launched. Generate a new battery
@@ -219,20 +275,29 @@ export default function ClientWorkspace({
             )
           }
           action={
-            <button
-              className="btn btn-primary"
-              onClick={runGenerate}
-              disabled={busy === "generate" || !client.analysis}
-            >
-              {busy === "generate" ? "Cooking…" : "Generate ads"}
-            </button>
+            <div className="flex gap-2 flex-wrap justify-end">
+              <button
+                className="btn btn-primary"
+                onClick={() => runGenerate("meta")}
+                disabled={busy === "generate" || !client.analysis}
+              >
+                {busy === "generate" ? "Cooking…" : "Generate Meta ads"}
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => runGenerate("google")}
+                disabled={busy === "generate" || !client.analysis}
+              >
+                Generate Google ads
+              </button>
+            </div>
           }
         />
 
         {/* Step 3: Launch */}
         <StepCard
           step={3}
-          title="Launch to Meta (paused)"
+          title="Launch (paused)"
           done={launchedAds.length > 0}
           disabled={draftAds.length === 0}
           disabledHint="Nothing to launch. Generate a battery first."
@@ -245,22 +310,37 @@ export default function ClientWorkspace({
               </div>
             ) : (
               <p className="text-[color:var(--muted)]">
-                We create the campaign + ad set on Meta and upload each ad in
-                <b> PAUSED </b> state. Nothing spends a cent until you flip it live
-                in Ads Manager. Daily budget: ${Math.round(client.monthlyBudgetUsd / 30)}.
+                We upload each ad in <b>PAUSED</b> state. Nothing spends a cent
+                until you flip it live in Ads Manager. Daily budget: $
+                {Math.round(client.monthlyBudgetUsd / 30)}.
               </p>
             )
           }
           action={
-            <button
-              className="btn btn-primary"
-              onClick={() => runLaunch(draftAds.map((a) => a.id))}
-              disabled={busy === "launch" || draftAds.length === 0}
-            >
-              {busy === "launch"
-                ? "Launching…"
-                : `Launch ${draftAds.length} ad${draftAds.length === 1 ? "" : "s"}`}
-            </button>
+            <div className="flex gap-2 flex-wrap justify-end">
+              {draftMeta.length > 0 && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => runLaunch(draftMeta.map((a) => a.id), "meta")}
+                  disabled={busy === "launch"}
+                >
+                  {busy === "launch"
+                    ? "Launching…"
+                    : `Launch ${draftMeta.length} to Meta`}
+                </button>
+              )}
+              {draftGoogle.length > 0 && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => runLaunch(draftGoogle.map((a) => a.id), "google")}
+                  disabled={busy === "launch"}
+                >
+                  {busy === "launch"
+                    ? "Launching…"
+                    : `Launch ${draftGoogle.length} to Google`}
+                </button>
+              )}
+            </div>
           }
         />
 

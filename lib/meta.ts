@@ -19,7 +19,9 @@
  * surfaces this clearly so nobody thinks they're spending money.
  */
 
-import type { AdCreative, AdMetrics, ClientGoal } from "./types";
+import { decrypt, encrypt } from "./crypto";
+import { exchangeForLongLivedToken } from "./meta-oauth";
+import type { AdCreative, AdMetrics, ClientGoal, ClientRecord } from "./types";
 
 const API_VERSION = process.env.META_API_VERSION || "v21.0";
 
@@ -27,18 +29,19 @@ export interface MetaConfig {
   accessToken: string;
   adAccountId: string;
   pageId: string;
+  /** Source of the access token, for the UI. */
+  source: "oauth" | "system-user-env";
 }
 
 /**
- * Build a Meta config from per-client overrides + env-var defaults.
- * Order:
- *   1. Per-client overrides (client.metaAdAccountId / metaPageId).
- *      Access token is always taken from env (shared System User token).
- *   2. Env vars META_AD_ACCOUNT_ID / META_PAGE_ID as account-wide default.
- *      Useful for single-tenant or development.
+ * Build a Meta config without per-client OAuth context.
  *
- * Returns null when no usable config is available — callers should treat
- * that as "mock mode".
+ * Order:
+ *   1. Per-client overrides (adAccountId / pageId from the client record),
+ *      paired with the env-var System User token.
+ *   2. Env vars META_AD_ACCOUNT_ID / META_PAGE_ID as account-wide default.
+ *
+ * Returns null when no usable config is available.
  */
 export function getMetaConfig(opts?: {
   adAccountId?: string;
@@ -48,7 +51,73 @@ export function getMetaConfig(opts?: {
   const adAccountId = opts?.adAccountId || process.env.META_AD_ACCOUNT_ID;
   const pageId = opts?.pageId || process.env.META_PAGE_ID;
   if (!accessToken || !adAccountId || !pageId) return null;
-  return { accessToken, adAccountId, pageId };
+  return { accessToken, adAccountId, pageId, source: "system-user-env" };
+}
+
+/**
+ * Build a Meta config for a specific client.
+ *
+ *   - Prefer the per-client OAuth token (decrypted) when present.
+ *   - Auto-refresh when within REFRESH_THRESHOLD_DAYS of expiry, and call
+ *     the optional onTokenRefreshed callback so the caller can persist
+ *     the refreshed token.
+ *   - Otherwise fall back to getMetaConfig() (System User from env).
+ */
+const REFRESH_THRESHOLD_DAYS = 7;
+
+export async function getMetaConfigForClient(
+  client: Pick<
+    ClientRecord,
+    "metaAdAccountId" | "metaPageId" | "metaOAuth"
+  >,
+  onTokenRefreshed?: (next: NonNullable<ClientRecord["metaOAuth"]>) => Promise<void>,
+): Promise<MetaConfig | null> {
+  const adAccountId = client.metaAdAccountId;
+  const pageId = client.metaPageId;
+  if (!adAccountId || !pageId) {
+    return getMetaConfig({ adAccountId, pageId });
+  }
+
+  if (client.metaOAuth) {
+    let oauth = client.metaOAuth;
+    const expiresAt = new Date(oauth.expiresAt).getTime();
+    const now = Date.now();
+    const daysLeft = (expiresAt - now) / (1000 * 60 * 60 * 24);
+
+    if (daysLeft <= 0) {
+      // Token expired. Don't refresh — Meta won't accept it. Fall back to
+      // the System User token if available; the UI will prompt re-connect.
+      return getMetaConfig({ adAccountId, pageId });
+    }
+
+    if (daysLeft < REFRESH_THRESHOLD_DAYS && onTokenRefreshed) {
+      try {
+        const current = decrypt(oauth.encryptedToken);
+        const refreshed = await exchangeForLongLivedToken(current);
+        oauth = {
+          ...oauth,
+          encryptedToken: encrypt(refreshed.accessToken),
+          expiresAt: new Date(
+            Date.now() + refreshed.expiresInSec * 1000,
+          ).toISOString(),
+          lastRefreshedAt: new Date().toISOString(),
+        };
+        await onTokenRefreshed(oauth);
+      } catch {
+        // Soft-fail: use the existing token until it actually expires.
+      }
+    }
+
+    try {
+      const accessToken = decrypt(oauth.encryptedToken);
+      return { accessToken, adAccountId, pageId, source: "oauth" };
+    } catch {
+      // Decryption failed — likely AUTH_SECRET rotated. Fall back.
+      return getMetaConfig({ adAccountId, pageId });
+    }
+  }
+
+  return getMetaConfig({ adAccountId, pageId });
 }
 
 export function metaConfigured(opts?: {

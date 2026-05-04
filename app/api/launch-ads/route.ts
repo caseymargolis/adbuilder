@@ -1,30 +1,14 @@
 import { NextResponse } from "next/server";
-import { getClient, updateAd } from "@/lib/db";
+import { getClient, updateAd, upsertClient } from "@/lib/db";
 import {
   createAd,
   createAdSet,
   createCampaign,
-  getMetaConfig,
-  metaConfigured,
+  getMetaConfigForClient,
   uploadAdImage,
   uploadAdVideo,
 } from "@/lib/meta";
 
-/**
- * Launch flow (real, not mock):
- *
- *   1. Build the per-client Meta config from the client record + env token.
- *   2. Create a campaign + ad set (PAUSED).
- *   3. For each ad:
- *        a. If video — upload to /advideos, wait for processing, get video_id.
- *        b. If image — upload to /adimages, get image_hash.
- *        c. Create ad creative + ad referencing the hash/id.
- *      All in PAUSED state.
- *   4. Persist Meta IDs back to the AdRecord.
- *
- * If Meta isn't configured, every step short-circuits to mock IDs so the
- * pipeline runs end-to-end in dev.
- */
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -36,19 +20,18 @@ export async function POST(req: Request) {
   const client = await getClient(clientId);
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const config = getMetaConfig({
-    adAccountId: client.metaAdAccountId,
-    pageId: client.metaPageId,
+  const config = await getMetaConfigForClient(client, async (refreshed) => {
+    client.metaOAuth = refreshed;
+    await upsertClient(client);
   });
   const isMock = !config;
 
-  // Daily budget ~= monthly / 30
   const totalDaily = client.monthlyBudgetUsd / 30;
 
   let campaignId: string;
   let adSetId: string;
 
-  if (isMock) {
+  if (isMock || !config) {
     campaignId = `mock_campaign_${Date.now()}`;
     adSetId = `mock_adset_${Date.now()}`;
   } else {
@@ -83,10 +66,9 @@ export async function POST(req: Request) {
 
     try {
       let metaAdId: string;
-      if (isMock) {
+      if (isMock || !config) {
         metaAdId = `mock_ad_${Date.now()}_${ad.id.slice(-4)}`;
       } else {
-        // Upload media, get the right reference shape for ad creation.
         let imageHash: string | null = null;
         let videoId: string | null = null;
         let thumbnailUrl: string | undefined;
@@ -97,11 +79,10 @@ export async function POST(req: Request) {
             videoUrl: ad.editedVideoUrl || ad.videoUrl!,
             filename: `${ad.id}.${(ad.editedVideoUrl || ad.videoUrl!).endsWith(".webm") ? "webm" : "mp4"}`,
           });
-          // Video creatives still benefit from a thumbnail; if we have a
-          // paired image we'll use it.
-          thumbnailUrl = ad.imageUrl && !ad.imageUrl.startsWith("data:image/svg")
-            ? ad.imageUrl
-            : undefined;
+          thumbnailUrl =
+            ad.imageUrl && !ad.imageUrl.startsWith("data:image/svg")
+              ? ad.imageUrl
+              : undefined;
         }
 
         if (!videoId && ad.imageUrl) {
@@ -149,10 +130,8 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({
-    metaConfigured: metaConfigured({
-      adAccountId: client.metaAdAccountId,
-      pageId: client.metaPageId,
-    }),
+    metaConfigured: !isMock,
+    metaSource: config?.source,
     campaignId,
     adSetId,
     perAdDailyUsd: Math.round(totalDaily / Math.max(adIds.length, 1)),

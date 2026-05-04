@@ -141,12 +141,59 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-host/api/cron/optimize
 If `RESEND_API_KEY` is set and the client has a `notifyEmail`, the digest
 goes out automatically after each run.
 
+## OAuth setup — Meta
+
+To enable one-click "Connect with Meta" instead of pasting IDs:
+
+1. Go to developers.facebook.com → My Apps → **Create App**.
+2. Type: "Business". Add the **Facebook Login for Business** product.
+3. App Settings → Basic — copy **App ID** → `META_APP_ID` and the
+   **App Secret** → `META_APP_SECRET`.
+4. Facebook Login → Settings → Valid OAuth Redirect URIs — add
+   `{APP_BASE_URL}/api/meta/oauth/callback`.
+5. App Review → Permissions and Features — for production with non-developer
+   accounts, request access to: `ads_management`, `ads_read`,
+   `business_management`, `pages_manage_ads`, `pages_read_engagement`.
+   You'll need a privacy policy URL, data deletion URL, and a screencast
+   showing the flow. Ballpark 1–2 weeks of review.
+6. While in development mode, only users you add as Roles → Developers /
+   Testers can connect. That's fine for an internal-only tool.
+
+Once configured, click "Connect with Meta" on any client. They'll go through
+the standard FB consent dialog, come back to the picker page, choose an ad
+account + page from dropdowns, and they're live. The token is encrypted at
+rest with `AUTH_SECRET` and refreshed automatically when it gets within 7
+days of expiry.
+
+## OAuth setup — Google Ads
+
+1. Cloud console → APIs & Services → **Enable Google Ads API**.
+2. APIs & Services → OAuth consent screen — pick "External", add the
+   `https://www.googleapis.com/auth/adwords` scope.
+3. APIs & Services → Credentials → **Create OAuth 2.0 Client ID** (type:
+   "Web application"). Add `{APP_BASE_URL}/api/google/oauth/callback` to
+   "Authorized redirect URIs". Copy Client ID / Secret.
+4. ads.google.com → Tools & Settings → API Center → apply for a
+   **developer token**. Test access is instant; production access requires
+   a short application form. Copy the token.
+5. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
+   `GOOGLE_ADS_DEVELOPER_TOKEN` in env.
+
+Once configured, every client gets a "Connect with Google" link in their
+workspace. You'll pick the customer (and manager / MCC if relevant) from
+the dropdown after OAuth.
+
+The Google Ads pipeline produces **Responsive Search Ads** (RSAs) — 12
+headlines + 4 descriptions per ad, mixed by Google at serve time. Same
+voice + analysis backbone as Meta; different ad shape.
+
 ## What's still on the roadmap
 
 These don't block production launches but are real next steps:
 
-- **OAuth-based Meta connection** — instead of pasting an account ID, click
-  "Connect Meta" → standard Meta Business Login flow. Less paste, more clicks.
+- **Performance Max for Google** — RSAs only for now. Adding PMax means
+  generating multiple asset groups (text + images + videos) and using the
+  Asset Groups API.
 - **Real-time webhooks** — currently we poll metrics on the optimize cron.
   Meta webhooks would let us react to status / budget changes immediately.
 - **Multi-tenant** — the current auth is one shared password for the whole

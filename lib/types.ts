@@ -6,6 +6,42 @@ export type ClientGoal =
   | "app_installs"
   | "messages";
 
+/**
+ * Which ad platform an ad targets. Each platform has its own creative
+ * shape, metrics, and optimization levers — see lib/ad-platforms/.
+ */
+export type AdPlatform = "meta" | "google";
+
+export interface GoogleAdsConfig {
+  customerId: string; // 10-digit number, no dashes
+  loginCustomerId?: string; // manager (MCC) ID, when access is via MCC
+  customerName?: string;
+}
+
+export interface GoogleAdsOAuth {
+  encryptedRefreshToken: string;
+  encryptedAccessToken?: string;
+  accessTokenExpiresAt?: string;
+  scope: string;
+  email?: string;
+  connectedAt: string;
+  lastRefreshedAt?: string;
+}
+
+/**
+ * Google Ads creative — Responsive Search Ad (RSA).
+ * Google delivers RSAs by combining headlines + descriptions dynamically.
+ */
+export interface GoogleRsaCreative {
+  finalUrl: string;
+  headlines: string[]; // 3-15 headlines, <=30 chars each
+  descriptions: string[]; // 2-4 descriptions, <=90 chars each
+  path1?: string; // <=15 chars, optional URL display path
+  path2?: string;
+  hypothesis: string;
+  angle: string;
+}
+
 export interface ClientRecord {
   id: string;
   name: string;
@@ -14,10 +50,28 @@ export interface ClientRecord {
   monthlyBudgetUsd: number;
   audienceNotes: string;
   offer: string; // 1-sentence description of the offer / product
+  /**
+   * Which platform(s) this client runs ads on. Default: ["meta"].
+   * The same workflow (analyze → generate → launch → optimize) supports
+   * either; UI surfaces the difference per ad.
+   */
+  platforms?: AdPlatform[];
   /** Per-client Meta config — overrides env-var defaults. */
   metaAdAccountId?: string;
   metaPageId?: string;
-  metaAccountName?: string; // pulled from validateMetaConfig at save time
+  metaAccountName?: string;
+  metaOAuth?: {
+    encryptedToken: string;
+    expiresAt: string; // ISO
+    scope: string;
+    userId: string;
+    userName: string;
+    connectedAt: string;
+    lastRefreshedAt?: string;
+  };
+  /** Per-client Google Ads config. */
+  googleAds?: GoogleAdsConfig;
+  googleOAuth?: GoogleAdsOAuth;
   /** Where digest emails / launch confirmations go. */
   notifyEmail?: string;
   createdAt: string;
@@ -110,7 +164,15 @@ export interface AdRecord {
   clientId: string;
   createdAt: string;
   status: AdStatus;
+  /** Which platform this ad targets. Default for legacy records: "meta". */
+  platform?: AdPlatform;
   creative: AdCreative;
+  /** Google RSA creative — only set when platform === "google". */
+  googleRsa?: GoogleRsaCreative;
+  /** Google Ads resource names after launch. */
+  googleAdGroupResource?: string;
+  googleAdResource?: string;
+  googleCampaignResource?: string;
   mediaKind: AdMediaKind;
   imageUrl?: string;
   imageProvider?: string;
