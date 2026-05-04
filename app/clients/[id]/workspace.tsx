@@ -2,12 +2,28 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { ClientRecord, OptimizationLog } from "@/lib/types";
+import { rosterFor, AGENTS } from "@/lib/agents";
+import type {
+  ClientRecord,
+  GamePlan,
+  GamePlanScope,
+  OptimizationLog,
+  OrganicPlatform,
+  OrganicPost,
+  Report,
+} from "@/lib/types";
 import AdCard from "@/components/AdCard";
 import ChatPanel from "@/components/ChatPanel";
 import ReportBlock from "@/components/ReportBlock";
 
-type Step = "analyze" | "generate" | "launch" | "optimize";
+type Step =
+  | "analyze"
+  | "generate"
+  | "launch"
+  | "optimize"
+  | "game-plan"
+  | "organic"
+  | "report";
 
 export default function ClientWorkspace({
   initialClient,
@@ -122,6 +138,79 @@ export default function ClientWorkspace({
     }
   }
 
+  async function runGamePlan(scope: GamePlanScope) {
+    setBusy("game-plan");
+    setError(null);
+    try {
+      const res = await fetch("/api/generate-game-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, scope }),
+      });
+      if (!res.ok)
+        throw new Error((await res.json()).error || "Game plan failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runGenerateOrganic(platforms: OrganicPlatform[]) {
+    setBusy("organic");
+    setError(null);
+    try {
+      const res = await fetch("/api/generate-organic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, platforms, withImages: true }),
+      });
+      if (!res.ok)
+        throw new Error((await res.json()).error || "Organic gen failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runSchedulePost(postId: string) {
+    setError(null);
+    try {
+      const res = await fetch("/api/schedule-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, postId }),
+      });
+      if (!res.ok)
+        throw new Error((await res.json()).error || "Schedule failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function runGenerateReport(audience: "client" | "pm") {
+    setBusy("report");
+    setError(null);
+    try {
+      const res = await fetch("/api/generate-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, audience }),
+      });
+      if (!res.ok)
+        throw new Error((await res.json()).error || "Report failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const draftAds = useMemo(
     () => client.ads.filter((a) => a.status === "draft"),
     [client.ads],
@@ -184,6 +273,35 @@ export default function ClientWorkspace({
         </header>
 
         {error && <div className="pill pill-red">{error}</div>}
+
+        {/* Roster — your team */}
+        <section className="card p-4">
+          <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold mb-2">
+            Your team on this account
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {rosterFor(client).map((a) => (
+              <div
+                key={a.id}
+                className="p-3 border border-[color:var(--line)] rounded-lg flex flex-col gap-1"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full"
+                    style={{ background: a.accent }}
+                  />
+                  <div className="font-display font-semibold">{a.name}</div>
+                </div>
+                <div className="text-[11px] text-[color:var(--muted)] uppercase tracking-wider">
+                  {a.role}
+                </div>
+                <div className="text-xs text-[color:var(--muted)] mt-0.5">
+                  {a.bio}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* Step 1: Analyze */}
         <StepCard
@@ -381,10 +499,35 @@ export default function ClientWorkspace({
             </div>
           }
         />
+
+        <GamePlanSection
+          plans={client.gamePlans ?? []}
+          busy={busy === "game-plan"}
+          disabled={!client.analysis}
+          onGenerate={runGamePlan}
+        />
+
+        <OrganicSection
+          posts={client.organicPosts ?? []}
+          busy={busy === "organic"}
+          disabled={!client.analysis}
+          onGenerate={runGenerateOrganic}
+          onSchedule={runSchedulePost}
+        />
+
+        <ReportsSection
+          reports={client.reports ?? []}
+          busy={busy === "report"}
+          onGenerate={runGenerateReport}
+        />
       </div>
 
       <aside className="lg:sticky lg:top-20 h-[75vh] min-h-[500px]">
-        <ChatPanel clientId={client.id} clientName={client.name} />
+        <ChatPanel
+          clientId={client.id}
+          clientName={client.name}
+          roster={rosterFor(client)}
+        />
       </aside>
     </div>
   );
@@ -459,6 +602,325 @@ function OptimizationHistory({ logs }: { logs: OptimizationLog[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function GamePlanSection({
+  plans,
+  busy,
+  disabled,
+  onGenerate,
+}: {
+  plans: GamePlan[];
+  busy: boolean;
+  disabled: boolean;
+  onGenerate: (scope: GamePlanScope) => void;
+}) {
+  return (
+    <section className="card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold">
+            Game plan · written by Atlas
+          </div>
+          <h2 className="font-display text-xl font-semibold mt-1">
+            The bet, in writing
+          </h2>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button
+            className="btn btn-ghost text-xs"
+            onClick={() => onGenerate("meta")}
+            disabled={busy || disabled}
+          >
+            Meta plan
+          </button>
+          <button
+            className="btn btn-ghost text-xs"
+            onClick={() => onGenerate("google")}
+            disabled={busy || disabled}
+          >
+            Google plan
+          </button>
+          <button
+            className="btn btn-ghost text-xs"
+            onClick={() => onGenerate("organic")}
+            disabled={busy || disabled}
+          >
+            Organic plan
+          </button>
+        </div>
+      </div>
+      {disabled && (
+        <p className="text-xs text-[color:var(--muted)] mt-3 italic">
+          Run the analysis first; Atlas needs the brand brief to write a plan.
+        </p>
+      )}
+      {plans.length === 0 ? (
+        <p className="text-[color:var(--muted)] mt-3">
+          Each plan is a phased rollout — a discovery test, then scale, then
+          iterate — with explicit success checks like "if CPA &lt; $12 by day
+          14, scale; else pivot." Generate one per channel you're running.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {plans.map((p) => (
+            <details
+              key={p.id}
+              className="border border-[color:var(--line)] rounded-lg p-4 bg-white/50"
+            >
+              <summary className="cursor-pointer flex items-center gap-2">
+                <span className="pill">{p.scope}</span>
+                <span className="font-display text-base font-semibold">
+                  {p.tldr}
+                </span>
+              </summary>
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="text-xs italic text-[color:var(--muted)]">
+                  Positioning: {p.positioning}
+                </div>
+                <ol className="space-y-2 list-decimal pl-4">
+                  {p.phases.map((ph) => (
+                    <li key={ph.number}>
+                      <b>{ph.name}</b> · {ph.durationDays}d
+                      <div className="text-xs text-[color:var(--muted)]">
+                        {ph.goal}
+                      </div>
+                      <ul className="text-xs list-disc pl-4 mt-1">
+                        {ph.actions.map((act, i) => (
+                          <li key={i}>{act}</li>
+                        ))}
+                      </ul>
+                      <div className="text-xs italic mt-1">
+                        Success check: {ph.successCheck}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <div className="prose-report mt-3 whitespace-pre-wrap text-sm">
+                  {p.raw}
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OrganicSection({
+  posts,
+  busy,
+  disabled,
+  onGenerate,
+  onSchedule,
+}: {
+  posts: OrganicPost[];
+  busy: boolean;
+  disabled: boolean;
+  onGenerate: (platforms: OrganicPlatform[]) => void;
+  onSchedule: (postId: string) => void;
+}) {
+  const PLATFORMS: OrganicPlatform[] = [
+    "instagram",
+    "linkedin",
+    "twitter",
+    "tiktok",
+    "facebook",
+    "threads",
+  ];
+  const [picked, setPicked] = useState<OrganicPlatform[]>([
+    "instagram",
+    "linkedin",
+  ]);
+  const togglePlat = (p: OrganicPlatform) => {
+    setPicked((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
+  };
+
+  return (
+    <section className="card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold">
+            Organic · written by River
+          </div>
+          <h2 className="font-display text-xl font-semibold mt-1">
+            12-post calendar
+          </h2>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => onGenerate(picked)}
+          disabled={busy || disabled || picked.length === 0}
+        >
+          {busy ? "Drafting…" : "Generate"}
+        </button>
+      </div>
+      {disabled && (
+        <p className="text-xs text-[color:var(--muted)] mt-3 italic">
+          Run the analysis first.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2 mt-3">
+        {PLATFORMS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            className={`pill text-xs ${picked.includes(p) ? "" : "opacity-50"}`}
+            onClick={() => togglePlat(p)}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      {posts.length === 0 ? (
+        <p className="text-[color:var(--muted)] mt-4">
+          River will produce 12 posts across the platforms you pick — different
+          angle each, suggested day &amp; hour, hashtags where they help. Schedule
+          via Buffer when configured; copy-paste reminders by email when not.
+        </p>
+      ) : (
+        <div className="mt-4 grid md:grid-cols-2 gap-3">
+          {posts.slice(0, 24).map((p) => (
+            <div
+              key={p.id}
+              className="border border-[color:var(--line)] rounded-lg p-3 bg-white/50 text-sm"
+            >
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="pill">{p.platform}</span>
+                <span className="pill">{p.angle}</span>
+                <span
+                  className={`pill ${
+                    p.status === "published"
+                      ? "pill-green"
+                      : p.status === "scheduled"
+                        ? "pill-amber"
+                        : p.status === "failed"
+                          ? "pill-red"
+                          : ""
+                  }`}
+                >
+                  {p.status}
+                </span>
+              </div>
+              {p.mediaUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={p.mediaUrl}
+                  alt=""
+                  className="w-full max-h-40 object-cover rounded mb-2"
+                />
+              )}
+              <p className="whitespace-pre-wrap leading-relaxed">{p.caption}</p>
+              {p.hashtags.length > 0 && (
+                <div className="text-[11px] text-[color:var(--muted)] mt-1">
+                  {p.hashtags.map((h) => `#${h}`).join(" ")}
+                </div>
+              )}
+              <div className="text-[11px] text-[color:var(--muted)] mt-2 italic">
+                Why: {p.hypothesis}
+              </div>
+              <div className="flex justify-between items-center mt-2 pt-2 border-t border-[color:var(--line)]">
+                <span className="text-[11px] text-[color:var(--muted)]">
+                  {p.scheduledAt
+                    ? new Date(p.scheduledAt).toLocaleString()
+                    : "no time set"}
+                </span>
+                {p.status === "draft" && (
+                  <button
+                    className="btn btn-ghost text-xs"
+                    onClick={() => onSchedule(p.id)}
+                  >
+                    Schedule
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReportsSection({
+  reports,
+  busy,
+  onGenerate,
+}: {
+  reports: Report[];
+  busy: boolean;
+  onGenerate: (audience: "client" | "pm") => void;
+}) {
+  return (
+    <section className="card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold">
+            Reports · written by Lex
+          </div>
+          <h2 className="font-display text-xl font-semibold mt-1">
+            Two registers, same voice
+          </h2>
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="btn btn-ghost text-xs"
+            onClick={() => onGenerate("client")}
+            disabled={busy}
+          >
+            Client report
+          </button>
+          <button
+            className="btn btn-ghost text-xs"
+            onClick={() => onGenerate("pm")}
+            disabled={busy}
+          >
+            PM brief
+          </button>
+        </div>
+      </div>
+      {reports.length === 0 ? (
+        <p className="text-[color:var(--muted)] mt-3">
+          Lex writes weekly client reports (jargon-free, outcome-first) and
+          daily PM briefs (every number, every decision). Both auto-email when
+          the cron runs.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {reports.slice(0, 5).map((r) => (
+            <details
+              key={r.id}
+              className="border border-[color:var(--line)] rounded-lg p-4 bg-white/50"
+            >
+              <summary className="cursor-pointer flex items-center gap-2 flex-wrap">
+                <span className={`pill ${r.audience === "client" ? "pill-green" : "pill-amber"}`}>
+                  {r.audience === "client" ? "Client report" : "PM brief"}
+                </span>
+                <span className="text-xs text-[color:var(--muted)]">
+                  {new Date(r.generatedAt).toLocaleString()}
+                </span>
+                <span className="font-display ml-1 truncate">{r.tldr}</span>
+              </summary>
+              <div className="mt-3 text-sm space-y-2">
+                {r.highlights.length > 0 && (
+                  <ul className="list-disc pl-5">
+                    {r.highlights.map((h, i) => (
+                      <li key={i}>{h}</li>
+                    ))}
+                  </ul>
+                )}
+                <div
+                  className="prose-report"
+                  dangerouslySetInnerHTML={{ __html: r.bodyHtml }}
+                />
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

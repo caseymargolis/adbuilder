@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AGENTS, type AgentDef, type AgentId } from "@/lib/agents";
 
 interface Message {
   role: "user" | "assistant";
@@ -10,19 +11,37 @@ interface Message {
 export default function ChatPanel({
   clientId,
   clientName,
+  roster,
+  defaultAgent = "atlas",
 }: {
   clientId: string;
   clientName: string;
+  roster: AgentDef[];
+  defaultAgent?: AgentId;
 }) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: `I've got ${clientName}'s account loaded — the analysis, the ads, the metrics. Ask me anything. "Is ad 3 worth keeping?" works. "Explain my CPA like I'm tired" also works.`,
-    },
-  ]);
+  const [agentId, setAgentId] = useState<AgentId>(defaultAgent);
+  const [audience, setAudience] = useState<"pm" | "client">("pm");
+  // Per-agent thread so switching agents doesn't lose context
+  const [threads, setThreads] = useState<Record<AgentId, Message[]>>(
+    () =>
+      Object.fromEntries(
+        Object.values(AGENTS).map((a) => [
+          a.id,
+          [
+            {
+              role: "assistant" as const,
+              content: greetingFor(a, clientName),
+            },
+          ],
+        ]),
+      ) as Record<AgentId, Message[]>,
+  );
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const messages = threads[agentId];
+  const agent = AGENTS[agentId];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -30,6 +49,15 @@ export default function ChatPanel({
       behavior: "smooth",
     });
   }, [messages]);
+
+  const setMessages = (
+    next: Message[] | ((prev: Message[]) => Message[]),
+  ) => {
+    setThreads((all) => ({
+      ...all,
+      [agentId]: typeof next === "function" ? next(all[agentId]) : next,
+    }));
+  };
 
   async function send() {
     if (!input.trim() || busy) return;
@@ -39,7 +67,6 @@ export default function ChatPanel({
     setInput("");
     setBusy(true);
 
-    // Optimistically append an empty assistant message we stream into.
     let current = "";
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
@@ -50,6 +77,8 @@ export default function ChatPanel({
         body: JSON.stringify({
           clientId,
           messages: nextMessages,
+          agentId,
+          audience,
         }),
       });
       if (!res.ok || !res.body) {
@@ -81,14 +110,86 @@ export default function ChatPanel({
     }
   }
 
+  const suggestions = useMemo(() => {
+    switch (agentId) {
+      case "molly":
+        return [
+          "Is ad 3 worth keeping?",
+          "Which Meta angle is winning?",
+          "When should we kill the worst-performing one?",
+        ];
+      case "geo":
+        return [
+          "Which RSA is performing best?",
+          "What search terms are converting?",
+          "Should we add negative keywords?",
+        ];
+      case "river":
+        return [
+          "What should we post next week?",
+          "Which platform is highest-engagement?",
+          "Draft a contrarian post for LinkedIn.",
+        ];
+      case "lex":
+        return [
+          "Summarize this week for the client.",
+          "What's the morning brief look like?",
+          "Where's our spend going hardest?",
+        ];
+      case "atlas":
+      default:
+        return [
+          "What's the play this week?",
+          "Should we shift budget toward Google?",
+          "Are we executing the game plan?",
+        ];
+    }
+  }, [agentId]);
+
   return (
     <div className="card h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-[color:var(--line)] flex items-center justify-between">
-        <div>
-          <div className="font-display font-semibold">Chat with Adwise</div>
-          <div className="text-xs text-[color:var(--muted)]">Knows this account</div>
+      <div className="px-4 py-3 border-b border-[color:var(--line)] space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {roster.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setAgentId(a.id)}
+              className={`pill text-[11px] ${
+                a.id === agentId ? "" : "opacity-60"
+              }`}
+              style={
+                a.id === agentId
+                  ? {
+                      background: a.accent,
+                      color: "#fff",
+                    }
+                  : undefined
+              }
+              title={a.bio}
+            >
+              {a.name}
+            </button>
+          ))}
         </div>
-        <span className="pill pill-green">online</span>
+        <div className="flex justify-between items-center">
+          <div>
+            <div className="font-display font-semibold">
+              Chatting with {agent.name}
+            </div>
+            <div className="text-xs text-[color:var(--muted)]">{agent.role}</div>
+          </div>
+          <select
+            className="text-xs border border-[color:var(--line)] rounded px-2 py-1 bg-white/70"
+            value={audience}
+            onChange={(e) =>
+              setAudience(e.target.value as "pm" | "client")
+            }
+          >
+            <option value="pm">PM mode</option>
+            <option value="client">Client mode</option>
+          </select>
+        </div>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((m, i) => (
@@ -104,11 +205,23 @@ export default function ChatPanel({
           </div>
         ))}
       </div>
+      <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+        {suggestions.map((s) => (
+          <button
+            key={s}
+            className="text-[11px] px-2 py-1 rounded-full bg-[color:var(--bg)] border border-[color:var(--line)] text-[color:var(--muted)] hover:text-[color:var(--ink)]"
+            onClick={() => setInput(s)}
+            type="button"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
       <div className="border-t border-[color:var(--line)] p-3 flex gap-2">
         <textarea
           className="input resize-none flex-1"
           rows={2}
-          placeholder="Ask away. Plain English is fine."
+          placeholder={`Ask ${agent.name}…`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -129,4 +242,20 @@ export default function ChatPanel({
       </div>
     </div>
   );
+}
+
+function greetingFor(agent: AgentDef, clientName: string): string {
+  switch (agent.id) {
+    case "molly":
+      return `Molly here. I run ${clientName}'s Meta side — every CPA, every frequency reading. Ask me about ad performance, what to kill, what to scale, and I'll tell you straight.`;
+    case "geo":
+      return `Geo. I'm on the Google Ads beat. Ask me about RSA performance, search terms, or whether to expand to Performance Max.`;
+    case "river":
+      return `River. I run organic for ${clientName}. The post calendar, the angles, the hashtag discipline. Ask me what to ship next.`;
+    case "lex":
+      return `Lex. I write the reports. Ask me to summarize the week for ${clientName} (client mode) or the morning brief (PM mode).`;
+    case "atlas":
+    default:
+      return `Atlas, head of strategy on ${clientName}. I see across Meta, Google, and organic. Ask me about the game plan, budget mix, or anything that crosses channels.`;
+  }
 }

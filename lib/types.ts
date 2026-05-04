@@ -12,6 +12,92 @@ export type ClientGoal =
  */
 export type AdPlatform = "meta" | "google";
 
+/**
+ * Organic social platforms. Used for the post calendar, not for ads.
+ */
+export type OrganicPlatform =
+  | "instagram"
+  | "linkedin"
+  | "twitter"
+  | "tiktok"
+  | "facebook"
+  | "threads";
+
+export type GamePlanScope = "meta" | "google" | "organic";
+
+export interface GamePlanPhase {
+  number: number;
+  name: string;
+  durationDays: number;
+  goal: string;
+  actions: string[];
+  successCheck: string; // "if CPA <= $12 by day 14, scale; else pivot to angle B"
+}
+
+export interface GamePlan {
+  id: string;
+  generatedAt: string;
+  scope: GamePlanScope;
+  tldr: string;
+  positioning: string; // 1 sentence — the bet
+  phases: GamePlanPhase[];
+  successMetrics: Array<{
+    metric: string;
+    target30d: string;
+    target90d: string;
+  }>;
+  budgetAllocation: string; // "60% Meta, 30% Google, 10% organic boost"
+  cadence?: string; // for organic: "3 IG/wk, 5 LinkedIn/mo"
+  risks: string[];
+  raw: string; // full plain-English doc
+}
+
+export interface OrganicPost {
+  id: string;
+  clientId: string;
+  createdAt: string;
+  platform: OrganicPlatform;
+  caption: string;
+  hashtags: string[];
+  mediaPrompt?: string;
+  mediaUrl?: string;
+  mediaProvider?: string;
+  scheduledAt?: string; // ISO
+  publishedAt?: string;
+  externalUrl?: string; // link to the published post
+  status: "draft" | "scheduled" | "published" | "failed" | "cancelled";
+  failureReason?: string;
+  angle: string;
+  hypothesis: string;
+  bufferUpdateId?: string; // when scheduled via Buffer
+}
+
+export interface ScheduledItem {
+  id: string;
+  clientId: string;
+  type: "publish_organic" | "launch_meta_wave" | "launch_google_wave";
+  refId: string; // post id / ad ids JSON / etc
+  scheduledAt: string;
+  processedAt?: string;
+  status: "pending" | "processed" | "failed";
+  failureReason?: string;
+}
+
+export type ReportAudience = "client" | "pm";
+
+export interface Report {
+  id: string;
+  clientId: string;
+  audience: ReportAudience;
+  generatedAt: string;
+  periodStart: string;
+  periodEnd: string;
+  tldr: string;
+  highlights: string[];
+  bodyHtml: string;
+  bodyText: string;
+}
+
 export interface GoogleAdsConfig {
   customerId: string; // 10-digit number, no dashes
   loginCustomerId?: string; // manager (MCC) ID, when access is via MCC
@@ -74,6 +160,18 @@ export interface ClientRecord {
   googleOAuth?: GoogleAdsOAuth;
   /** Where digest emails / launch confirmations go. */
   notifyEmail?: string;
+  /** Plain-language client report goes here (separate audience). */
+  clientNotifyEmail?: string;
+  /** Strategic game plans, indexed by scope. */
+  gamePlans?: GamePlan[];
+  /** Organic social content + scheduling state. */
+  organicPosts?: OrganicPost[];
+  /** Scheduled queue (publish posts, launch ad waves, etc). */
+  scheduledItems?: ScheduledItem[];
+  /** Saved reports (client + PM). */
+  reports?: Report[];
+  /** When true, daily optimize auto-applies; scheduled items execute. */
+  autopilot?: boolean;
   createdAt: string;
   analysis?: WebsiteAnalysis;
   ads: AdRecord[];

@@ -8,6 +8,7 @@
  * Don't fail the caller if email fails — it's never load-bearing.
  */
 
+import { AGENTS, type AgentId } from "./agents";
 import type { OptimizationLog } from "./types";
 
 interface SendResult {
@@ -16,15 +17,31 @@ interface SendResult {
   error?: string;
 }
 
-async function send(args: {
+/**
+ * Send an email. When `from` is an agent id, the from-address shows
+ * "Molly via Adwise <hello@yourshop.com>" — keeps the persona alive
+ * in the client's inbox.
+ */
+export async function send(args: {
   to: string;
   subject: string;
   html: string;
   text: string;
+  fromAgent?: AgentId;
 }): Promise<SendResult> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM;
-  if (!key || !from) return { sent: false, error: "Resend not configured" };
+  const baseFrom = process.env.RESEND_FROM;
+  if (!key || !baseFrom) return { sent: false, error: "Resend not configured" };
+
+  // baseFrom is expected to look like `Adwise <hello@yourshop.com>`. If an
+  // agent is supplied, replace the friendly name with "<Agent> via Adwise".
+  let from = baseFrom;
+  if (args.fromAgent) {
+    const agent = AGENTS[args.fromAgent];
+    const match = baseFrom.match(/<([^>]+)>/);
+    const email = match ? match[1] : baseFrom;
+    from = `${agent.name} via Adwise <${email}>`;
+  }
 
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -109,7 +126,7 @@ export async function sendOptimizationDigest(args: {
   </div>
 </body></html>`.trim();
 
-  return send({ to: args.to, subject, text, html });
+  return send({ to: args.to, subject, text, html, fromAgent: "molly" });
 }
 
 function shortVerdict(log: OptimizationLog): string {
