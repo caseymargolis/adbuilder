@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#F4F1EA" />
+<title>Adwise — preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #F4F1EA;
+    --ink: #1a1a1a;
+    --muted: #5f5b54;
+    --line: #d9d2c4;
+    --terracotta: #C45A3F;
+    --moss: #4A6B3A;
+    --paper: #fffdf8;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .display { font-family: "Fraunces", Georgia, serif; letter-spacing: -0.01em; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 16px env(safe-area-inset-bottom); }
+  header.top {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in oklab, var(--bg) 92%, transparent);
+    backdrop-filter: saturate(180%) blur(8px);
+    -webkit-backdrop-filter: saturate(180%) blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding-top: env(safe-area-inset-top);
+  }
+  .logo { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 22px; letter-spacing: -0.02em; }
+  .logo .dot { color: var(--terracotta); }
+  .step-nav {
+    display: flex; gap: 6px; padding: 10px 16px 12px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .step-nav::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .chip.done { color: var(--moss); }
+  .chip .num { font-family: "Fraunces", serif; opacity: 0.6; margin-right: 4px; }
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px;
+    margin: 14px 0;
+  }
+  .label {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600; padding: 3px 9px;
+    border-radius: 999px; background: #eee6d3; color: var(--ink);
+  }
+  .pill.green { background: #e0ead3; color: #2e4a1f; }
+  .pill.amber { background: #f5e1bb; color: #6b4a12; }
+  .pill.red { background: #f2d3cb; color: #6b2415; }
+  .pill.blue { background: #d6e3ee; color: #1f3b54; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px;
+    font-family: inherit; font-weight: 600; font-size: 14px;
+    padding: 11px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--paper); color: var(--ink);
+    cursor: pointer;
+    transition: transform 0.05s ease;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .btn.full { width: 100%; }
+  .btn.sm { padding: 7px 11px; font-size: 12.5px; }
+  input.f, select.f, textarea.f {
+    width: 100%; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--paper);
+    font: inherit; color: inherit;
+  }
+  input.f:focus, select.f:focus, textarea.f:focus {
+    outline: 2px solid var(--terracotta); outline-offset: -1px;
+  }
+  .row { display: grid; gap: 10px; }
+  .row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .tldr {
+    border-left: 3px solid var(--terracotta);
+    padding-left: 14px;
+  }
+  .tldr h3 { margin: 0; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .tldr p { margin: 4px 0 0; font-family: "Fraunces", serif; font-size: 18px; line-height: 1.35; }
+  .ad {
+    border: 1px solid var(--line); border-radius: 16px;
+    overflow: hidden; background: var(--paper);
+    margin: 12px 0;
+  }
+  .ad .img {
+    aspect-ratio: 1/1; position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #d9d2c4, #b6a98c);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ad .img .label-tl { position: absolute; top: 8px; left: 8px; }
+  .ad .img .label-tr { position: absolute; top: 8px; right: 8px; }
+  .ad .img svg { width: 100%; height: 100%; display: block; }
+  .ad .body { padding: 14px; }
+  .ad h4 { margin: 8px 0 4px; font-family: "Fraunces", serif; font-size: 17px; line-height: 1.25; }
+  .ad p.copy { margin: 0; font-size: 13.5px; }
+  .ad .desc { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .ad .why { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+  .ad .why b { color: var(--ink); font-weight: 600; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--line); }
+  .metric .lab { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .metric .val { font-weight: 700; font-size: 13px; }
+  .step-card { padding: 18px; }
+  .step-num { font-family: "Fraunces", serif; font-style: italic; font-weight: 500; font-size: 12px; color: var(--muted); }
+  .step-title { font-family: "Fraunces", serif; font-size: 22px; font-weight: 600; margin: 4px 0 4px; line-height: 1.2; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* Chat */
+  .chat-wrap { display: flex; flex-direction: column; height: 70vh; min-height: 420px; }
+  .chat-stream {
+    flex: 1; overflow-y: auto;
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .msg { font-size: 14px; line-height: 1.5; padding: 10px 12px; border-radius: 16px; max-width: 85%; white-space: pre-wrap; }
+  .msg.user { background: var(--ink); color: var(--bg); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.bot { background: var(--bg); border: 1px solid var(--line); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .chat-input {
+    border-top: 1px solid var(--line);
+    padding: 10px;
+    display: flex; gap: 8px;
+  }
+  .chat-input textarea { flex: 1; resize: none; }
+  .suggestions { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 14px 0; }
+  .suggestion {
+    font-size: 11.5px; padding: 5px 10px; border-radius: 999px;
+    background: var(--bg); border: 1px solid var(--line); color: var(--muted);
+    cursor: pointer;
+  }
+
+  details summary { cursor: pointer; }
+
+  /* Hide step-cards not active */
+  .step-pane { display: none; }
+  .step-pane.active { display: block; }
+
+  /* Banner */
+  .banner {
+    background: var(--paper); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; margin: 14px 0;
+    font-size: 12.5px; color: var(--muted);
+  }
+  .banner b { color: var(--ink); font-weight: 600; }
+
+  /* Footer */
+  footer { padding: 24px 16px 40px; color: var(--muted); font-size: 11.5px; text-align: center; }
+
+  /* Hero */
+  .hero { padding: 18px 0 10px; }
+  .hero .eyebrow { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .hero h1 { font-family: "Fraunces", serif; font-size: 34px; line-height: 1.05; margin: 6px 0 8px; font-weight: 600; letter-spacing: -0.02em; }
+  .hero p { color: var(--muted); margin: 0; }
+
+  @media (min-width: 600px) {
+    .hero h1 { font-size: 42px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap" style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; padding-bottom: 4px;">
+    <div class="logo">Adwise<span class="dot">.</span></div>
+    <div class="pill">demo · Riverline Coffee Co.</div>
+  </div>
+  <nav class="step-nav" id="step-nav"></nav>
+</header>
+
+<main class="wrap">
+
+  <!-- ================ HERO ================ -->
+  <section class="hero">
+    <div class="eyebrow">Internal preview</div>
+    <h1>Paste a website. Get ads that are worth testing.</h1>
+    <p>This is a guided demo. Tap through the four steps, then chat with the companion at the end. All copy is in the actual brand voice — no placeholder Lorem ipsum.</p>
+  </section>
+
+  <!-- ================ STEP 1: BRIEF ================ -->
+  <section class="step-pane active" id="pane-brief">
+    <div class="card">
+      <div class="step-num">Step 1 · 30 seconds</div>
+      <h2 class="step-title">The brief</h2>
+      <p class="muted small">Six fields. We only ask for what we actually use.</p>
+      <div class="row" style="margin-top: 14px;">
+        <div>
+          <div class="label">Client name</div>
+          <input class="f" value="Riverline Coffee Co." readonly />
+        </div>
+        <div>
+          <div class="label">Website</div>
+          <input class="f" value="riverlinecoffee.com" readonly />
+        </div>
+        <div class="row cols-2">
+          <div>
+            <div class="label">Goal</div>
+            <input class="f" value="Sales / purchases" readonly />
+          </div>
+          <div>
+            <div class="label">Monthly budget</div>
+            <input class="f" value="$2,400" readonly />
+          </div>
+        </div>
+        <div>
+          <div class="label">What they sell — one sentence</div>
+          <input class="f" value="Single-origin cold brew subscriptions, shipped monthly in glass." readonly />
+        </div>
+        <div>
+          <div class="label">Audience notes</div>
+          <textarea class="f" rows="2" readonly>Late 30s, coastal cities, owns an espresso machine and feels a little guilty about it.</textarea>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="goto('analyze')">Analyze the site →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================ STEP 2: ANALYSIS ================ -->
+  <section class="step-pane" id="pane-analyze">
+    <div class="card" id="analyze-card">
+      <div class="step-num">Step 2</div>
+      <h2 class="step-title">What we found on the site</h2>
+      <div id="analysis-content"></div>
+    </div>
+  </section>
+
+  <!-- ================ STEP 3: ADS ================ -->
+  <section class="step-pane" id="pane-ads">
+    <div class="card">
+      <div class="step-num">Step 3</div>
+      <h2 class="step-title">Five ads, five hypotheses</h2>
+      <p class="small muted">Each variant pulls a different lever. We pair each one with the image model that's best at the job — Ideogram for posters, FLUX for photoreal, Imagen for illustration. Tap any card for the full rationale.</p>
+      <div class="banner" style="margin-top: 12px;">
+        <b>Image model routing.</b> Claude reads each brief and picks. The chosen model is shown in the corner of every ad. The decision sticks with the ad so we can tie performance back to the provider over time.
+      </div>
+      <div id="ads-list"></div>
+      <div class="actions">
+        <button class="btn primary" onclick="goto('launch')">Launch to Meta (paused) →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================ STEP 4: LAUNCH ================ -->
+  <section class="step-pane" id="pane-launch">
+    <div class="card">
+      <div class="step-num">Step 4</div>
+      <h2 class="step-title">Launched. Paused. Safe.</h2>
+      <p class="small">5 ads, 1 ad set, 1 campaign. Everything ships <b>PAUSED</b>. Nothing spends a cent until a human flips it live in Ads Manager.</p>
+      <div class="row cols-2" style="margin-top: 14px;">
+        <div class="card" style="margin: 0; padding: 12px;">
+          <div class="label">Daily budget</div>
+          <div style="font-family: 'Fraunces', serif; font-size: 24px;">$80</div>
+          <div class="small muted">$2,400 ÷ 30, split across 5 ads</div>
+        </div>
+        <div class="card" style="margin: 0; padding: 12px;">
+          <div class="label">Targeting</div>
+          <div style="font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.3;">US, 18–65,<br/>FB + IG</div>
+          <div class="small muted">Broad. Algo prefers it.</div>
+        </div>
+      </div>
+      <div class="banner" style="margin-top: 14px;">
+        <b>Why paused, not live?</b> Because every internal tool that auto-launches creative has caused at least one Slack panic. We don't.
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="goto('optimize')">Skip ahead 7 days →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================ STEP 5: OPTIMIZE ================ -->
+  <section class="step-pane" id="pane-optimize">
+    <div class="card">
+      <div class="step-num">Step 5 · runs daily</div>
+      <h2 class="step-title">A week in. Here's the verdict.</h2>
+      <div id="optimize-content"></div>
+    </div>
+  </section>
+
+  <!-- ================ STEP 6: CHAT ================ -->
+  <section class="step-pane" id="pane-chat">
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <div style="padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div class="step-num">Bonus</div>
+          <h2 class="step-title" style="margin: 0;">Chat with Adwise</h2>
+          <p class="small muted" style="margin: 2px 0 0;">It already knows this account. Try a question.</p>
+        </div>
+        <span class="pill green">online</span>
+      </div>
+
+      <div class="chat-wrap">
+        <div class="chat-stream" id="chat-stream"></div>
+        <div class="suggestions" id="suggestions"></div>
+        <div class="chat-input">
+          <textarea class="f" id="chat-input" rows="1" placeholder="Plain English is fine. e.g. 'is ad 3 worth keeping?'"></textarea>
+          <button class="btn primary" id="chat-send">Send</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Adwise · This is a static preview. The real app launches actual ads.<br/>
+  Brand voice baked in: smart, direct, plain English, no LinkedIn energy.
+</footer>
+
+<script>
+/* =========================================================================
+   Mock data — written in the actual brand voice we'd ship.
+   ======================================================================= */
+
+const STEPS = [
+  { id: 'brief',    label: 'Brief'    },
+  { id: 'analyze',  label: 'Analysis' },
+  { id: 'ads',      label: 'Ads'      },
+  { id: 'launch',   label: 'Launch'   },
+  { id: 'optimize', label: 'Optimize' },
+  { id: 'chat',     label: 'Chat'     },
+];
+
+const ANALYSIS = {
+  tldr: "Riverline sells small-batch single-origin cold brew on a monthly subscription. The buyer already drinks good coffee — this is a treat tier, not a discovery purchase.",
+  positioning: "Premium-but-unfussy. Not third-wave purist, not cute mass-market. A 'I care about coffee but I'm not insane about it' brand.",
+  audience: "Coastal millennials with a kitchen they're proud of and a Sunday morning ritual. They already have an espresso machine. They want cold brew without making it themselves.",
+  differentiators: [
+    "Glass bottles, not plastic — feels like a deli, not a meal kit",
+    "Single-origin rotation, not blends — actual interest for the coffee-curious",
+    "Pause-anytime subscription with no email-to-cancel friction",
+    "Roasted within 5 days of shipment"
+  ],
+  objections: [
+    "'I can make this at home for $4' — true, but that's not the offer",
+    "Subscription fatigue — needs an explicit pause, not a 'manage' euphemism",
+    "Glass = expensive shipping — own it, don't hide it"
+  ],
+  proofPoints: [
+    "1,200+ five-star reviews on the homepage carousel",
+    "Featured in Sprudge and Bon Appétit, both above the fold",
+    "'Skip a month, anytime' lockup near the CTA"
+  ],
+  surfaces: [
+    "/start — the customizer, where 60% of conversions happen",
+    "/origins/ethiopia-yirgacheffe — best landing for the 'curious about coffee' angle",
+    "/gift — strong shoulder season, especially Nov–Dec"
+  ],
+  voice: "Confident, slightly nerdy about beans, never preachy. Reads like a knowledgeable friend, not a brand book.",
+  risks: [
+    "Glass bottles + ice → some customers receive damaged shipments. We should not promise 'guaranteed' anything in copy.",
+    "Subscription category ad scrutiny on Meta — make sure cancellation terms are visible from the ad's destination URL."
+  ],
+  raw: `Riverline is in the rare position of having a product that's actually good and a website that mostly gets out of its way. The hero says what they sell, the price is visible, and the cancel-anytime language is right there next to the CTA. That's three things 80% of subscription brands get wrong, and we should not undo any of it.
+
+The buyer here isn't 'someone who wants coffee.' It's someone who already drinks good coffee, has thought about cold brew, and is one well-aimed nudge away from outsourcing the part of their morning they keep meaning to optimize. We don't have to convince them coffee is good. We have to give them permission to not make it themselves.
+
+The angles that should work: the 'I have an espresso machine but I'm tired' angle (identity), the 'better than the deli, cheaper than your time' angle (concrete outcome), and the contrarian 'don't buy this if you actually like making cold brew' angle (which works precisely because their site doesn't take itself too seriously). What won't work: anything that smells like a discovery brand pitch. They are not Atlas Coffee. We should not borrow that vocabulary.`
+};
+
+const ADS = [
+  {
+    id: 'a1',
+    angle: 'identity',
+    headline: "For people who own an espresso machine and are tired.",
+    primary: "Cold brew that respects the fact you've already done your part. Glass, single-origin, and a subscription you can actually pause.",
+    desc: "Skip a month, anytime.",
+    cta: "SHOP_NOW",
+    hypothesis: "The audience already buys premium coffee tools. Permission to take a shortcut converts better than 'discover great coffee.'",
+    image: "Steam-clouded espresso machine on a counter at 7am, gold light, a bottle of Riverline cold brew in front, condensation. Lifestyle, photoreal.",
+    provider: "flux-1.1-pro-ultra",
+    providerReason: "Photoreal lifestyle with natural light and condensation detail — FLUX wins photoreal."
+  },
+  {
+    id: 'a2',
+    angle: 'social proof',
+    headline: "1,247 people skipped the deli this month.",
+    primary: "Riverline ships single-origin cold brew in glass. The reviews say what we'd say but with fewer adjectives.",
+    desc: "Read the 5-star ones first. They're shorter.",
+    cta: "LEARN_MORE",
+    hypothesis: "Specific numbers beat 'best-selling.' The line about reviews undercuts the brag, which matches the brand's tone.",
+    image: "Editorial poster with the headline rendered in serif type over a close-up of a glass bottle. Strong typographic hierarchy.",
+    provider: "ideogram-v3",
+    providerReason: "Headline rendered IN the image — Ideogram is the only one that nails text."
+  },
+  {
+    id: 'a3',
+    angle: 'contrarian',
+    headline: "Don't buy this if you actually like making cold brew.",
+    primary: "It's a 14-hour thing. If that's your hobby, keep doing it. If you've been meaning to give it up, that's what we sell.",
+    desc: "Single-origin, glass, ships monthly.",
+    cta: "GET_OFFER",
+    hypothesis: "Reverse psychology lands when the brand can pull it off without smug. Riverline can. The site already does it.",
+    image: "Hand-drawn editorial illustration of a person hugging a French press at 3am with mild despair. Earthy palette.",
+    provider: "imagen-4",
+    providerReason: "Stylized editorial illustration — Imagen 4's voice fits the brand's quiet wit."
+  },
+  {
+    id: 'a4',
+    angle: 'concrete outcome',
+    headline: "The first sip lands Tuesday.",
+    primary: "Pick a roast tonight. Skip the deli all week. Glass bottles, single-origin, real subscription with a real pause button.",
+    desc: "Free shipping over $40.",
+    cta: "SHOP_NOW",
+    hypothesis: "Specific timing beats vague benefit. Tuesday is more believable than 'fast.'",
+    image: "Top-down shot of a cardboard shipping box opening to reveal three glass bottles nested in protective fiber, morning light through window blinds.",
+    provider: "flux-1.1-pro-ultra",
+    providerReason: "Top-down photoreal product hero — FLUX handles fiber/glass/light interactions cleanly."
+  },
+  {
+    id: 'a5',
+    angle: 'curiosity',
+    headline: "Why we put cold brew in glass.",
+    primary: "It costs more to ship. We do it anyway. There's a reason and you can probably guess it on the first taste.",
+    desc: "Single-origin. Pause anytime.",
+    cta: "LEARN_MORE",
+    hypothesis: "Open-loop on a small mystery. Earns the click without overpromising. Reinforces the 'glass' differentiator.",
+    image: "Macro shot of a glass bottle's neck with condensation droplets, soft window light, slight depth-of-field on the cap.",
+    provider: "kling-2",
+    providerReason: "Liquid + glass physics — Kling handles condensation and light refraction better than the rest."
+  }
+];
+
+const METRICS_AFTER_7_DAYS = {
+  a1: { spend: 132, impressions: 18420, clicks: 312, ctr: 1.69, cpc: 0.42, conv: 14, cpa: 9.43, freq: 1.4 },
+  a2: { spend: 128, impressions: 22100, clicks: 462, ctr: 2.09, cpc: 0.28, conv: 19, cpa: 6.74, freq: 1.6 },
+  a3: { spend: 112, impressions: 14200, clicks: 198, ctr: 1.39, cpc: 0.57, conv: 11, cpa: 10.18, freq: 1.2 },
+  a4: { spend: 144, impressions: 16800, clicks: 188, ctr: 1.12, cpc: 0.77, conv: 6, cpa: 24.00, freq: 3.7 },
+  a5: { spend: 98,  impressions: 12300, clicks: 168, ctr: 1.37, cpc: 0.58, conv: 9, cpa: 10.89, freq: 1.3 }
+};
+
+const OPTIMIZATION = {
+  tldr: "Ad 2 (social proof) is the early winner — best CTR, lowest CPA. Ad 4 (concrete outcome) is fatiguing fast and burning money. We're scaling 2, killing 4, holding the rest one more cycle.",
+  raw: `A week in, the picture is clean enough to act on. Ad 2 — the 'skipped the deli' line — is doing the work for the whole account. CTR (the rate of people clicking after they see it) is 2.09% against a target of 1.5%, and CPA (cost to land one subscriber) is $6.74 against a $12 target. Doubling its budget is the obvious move.
+
+Ad 4 is the opposite story. CTR is below target, CPA is double, and frequency just hit 3.7 — meaning the same person has now seen it almost four times in a week. That's the line where ad fatigue starts costing you real dollars. Pausing it. We can revisit the angle with a new image in the next round if we want to keep it as a hypothesis.
+
+Ads 1, 3, and 5 are middle-of-the-road. Not winners, not losers. Holding them one more cycle to see if any of them sharpen up — there's not enough data to make a confident call yet on under 200 clicks each.`,
+  actions: [
+    { kind: 'scale_up', adId: 'a2', reason: '2.09% CTR (target 1.5%) and $6.74 CPA (target $12) on $128 spend. Scale daily from $20 → $40.' },
+    { kind: 'kill',     adId: 'a4', reason: 'CPA $24.00 (2x target), frequency 3.7 (creative fatigue), CTR below baseline. $144 spent for 6 conversions.' },
+    { kind: 'hold',     adId: 'a1', reason: 'Trending fine but only 312 clicks. Need another cycle before calling it.' },
+    { kind: 'hold',     adId: 'a3', reason: 'Contrarian angle pulls a different audience — lower volume but acceptable CPA. Hold.' },
+    { kind: 'hold',     adId: 'a5', reason: 'Mid-pack, low frequency, no fatigue signs. Hold.' }
+  ]
+};
+
+const CHAT_RESPONSES = [
+  {
+    match: ['ad 4', 'kill', 'why'],
+    answer: "Three things stacked. CTR is 1.12% (target 1.5%), CPA is $24 (target $12), and frequency hit 3.7 in seven days — that's the 'same person has seen this four times' line where it stops being efficient. Pausing it isn't a judgment on the angle, it's a judgment on this specific creative. Worth retrying with a new image in the next round."
+  },
+  {
+    match: ['ad 2', 'winner', 'best'],
+    answer: "Yes — for now. CTR 2.09%, CPA $6.74, frequency still under 2. The 'skipped the deli' line is doing real work. The risk on the next two weeks is fatigue: at this scale ad 2 will cross frequency 3 in roughly 10 days. We should have a backup angle ready — probably a variant of ad 1 (the 'tired espresso owner' identity play)."
+  },
+  {
+    match: ['cpa', 'mean', 'what is'],
+    answer: "CPA = Cost Per Acquisition. The dollars it took to get one paying subscriber. Riverline's blended CPA across the account is $9.74 right now. Their break-even is roughly $14 (one month of subscription revenue minus product cost). Anything under $12 is real profit; over $20 is bleeding."
+  },
+  {
+    match: ['scale', 'ad 2', 'how much'],
+    answer: "From $20/day to $40/day. Doubling on a single creative is the most aggressive Meta usually wants — bigger jumps spook the optimizer and you can lose the audience signal. If it holds at $40 for three days we can push again."
+  },
+  {
+    match: ['budget', 'spent', 'how much'],
+    answer: "$614 spent across the five ads in seven days. That's slightly under target ($560 expected — $80/day × 7) because ad 5 underdelivered impressions on day three. Total revenue from the 59 conversions: $1,476. So we're at roughly 2.4x ROAS account-wide, which is healthy for week one of a cold-brew subscription."
+  },
+  {
+    match: ['video', 'add a video', 'video variant'],
+    answer: "Worth doing for ad 2, since it's the winner. Veo 3 would handle 'lifestyle with audio' best — picture a 6-second clip of someone pulling a Riverline bottle out of the fridge at 7am, kettle in the background. The editor handles the headline overlay, so the model doesn't have to render text in-frame (which is still flaky in 2026)."
+  },
+  {
+    match: ['help', 'what can'],
+    answer: "Ask me about specific ads (\"is ad 3 worth keeping?\"), metrics (\"explain my CPA\"), the optimization (\"why kill ad 4?\"), or the strategy (\"should we add a video variant?\"). I have the analysis, the five ads, the seven-day metrics, and the optimization log loaded."
+  }
+];
+
+const FALLBACK_CHAT = "Honest answer: I can't tell from the data we have. The demo only loads seven days of metrics for the five sample ads. In the real tool I can also pull the optimization history, the campaign-level totals, and a per-conversion-window breakdown — but here, that's the wall.";
+
+const SUGGESTIONS = [
+  "Why kill ad 4?",
+  "Is ad 2 the winner?",
+  "What does CPA mean?",
+  "Should we add a video variant?",
+  "How much have we spent?"
+];
+
+/* =========================================================================
+   Render
+   ======================================================================= */
+
+let currentStep = 'brief';
+let visited = new Set(['brief']);
+
+function renderNav() {
+  const nav = document.getElementById('step-nav');
+  nav.innerHTML = STEPS.map((s, i) => {
+    const cls = s.id === currentStep ? 'chip active' : (visited.has(s.id) ? 'chip done' : 'chip');
+    return `<button class="${cls}" onclick="goto('${s.id}')"><span class="num">${i+1}</span>${s.label}</button>`;
+  }).join('');
+}
+
+function goto(id) {
+  currentStep = id;
+  visited.add(id);
+  document.querySelectorAll('.step-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('pane-' + id).classList.add('active');
+  renderNav();
+  if (id === 'analyze') renderAnalysis();
+  if (id === 'ads') renderAds();
+  if (id === 'optimize') renderOptimization();
+  if (id === 'chat') initChat();
+  // Smooth scroll to top of pane
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderAnalysis() {
+  const el = document.getElementById('analysis-content');
+  if (el.dataset.rendered) return;
+  el.dataset.rendered = '1';
+  const A = ANALYSIS;
+  el.innerHTML = `
+    <div class="tldr" style="margin: 14px 0 16px;">
+      <h3>TL;DR</h3>
+      <p>${A.tldr}</p>
+    </div>
+
+    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;">
+      ${A.differentiators.slice(0, 4).map(d => `<span class="pill">${escapeHtml(d.split('—')[0].trim())}</span>`).join('')}
+    </div>
+
+    <details open>
+      <summary class="muted small">Read the whole briefing</summary>
+      <div style="margin-top: 12px;">
+        ${A.raw.split('\n\n').map(p => `<p style="margin: 0 0 10px;">${escapeHtml(p)}</p>`).join('')}
+      </div>
+    </details>
+
+    <div class="row cols-2" style="margin-top: 16px;">
+      <div>
+        <div class="label">Differentiators</div>
+        <ul style="margin: 0; padding-left: 16px; font-size: 13px;">
+          ${A.differentiators.map(d => `<li>${escapeHtml(d)}</li>`).join('')}
+        </ul>
+      </div>
+      <div>
+        <div class="label">Objections to handle</div>
+        <ul style="margin: 0; padding-left: 16px; font-size: 13px;">
+          ${A.objections.map(o => `<li>${escapeHtml(o)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top: 14px;">
+      <div>
+        <div class="label">Risks worth respecting</div>
+        <ul style="margin: 0; padding-left: 16px; font-size: 13px;">
+          ${A.risks.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" onclick="goto('ads')">Generate the test battery →</button>
+    </div>
+  `;
+}
+
+function renderAds() {
+  const el = document.getElementById('ads-list');
+  if (el.dataset.rendered) return;
+  el.dataset.rendered = '1';
+  el.innerHTML = ADS.map((ad, i) => `
+    <div class="ad">
+      <div class="img">
+        ${adArtwork(ad, i)}
+        <span class="pill label-tl">${ad.angle}</span>
+        <span class="pill label-tr small">${ad.provider}</span>
+      </div>
+      <div class="body">
+        <h4>${escapeHtml(ad.headline)}</h4>
+        <p class="copy">${escapeHtml(ad.primary)}</p>
+        <p class="desc">${escapeHtml(ad.desc)}</p>
+        <div style="margin-top: 8px;"><span class="pill amber">${ad.cta.replace('_', ' ')}</span></div>
+        <div class="why"><b>Why this should work:</b> ${escapeHtml(ad.hypothesis)}</div>
+        <div class="why"><b>Image model:</b> ${escapeHtml(ad.providerReason)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* Decorative SVG art per ad — gives each card a distinct, on-brand visual
+   without needing real image assets. */
+function adArtwork(ad, i) {
+  const palettes = [
+    ['#3a2a1f', '#a86a3d', '#f0d9b5'],   // espresso warm
+    ['#4a3220', '#c9a87a', '#fff5dc'],   // amber poster
+    ['#2a3322', '#7a8a5b', '#e8e4d2'],   // editorial olive
+    ['#1f2a35', '#5a7a8a', '#dbe8ee'],   // morning blue
+    ['#222', '#4a4030', '#d4c8a8']       // glass macro
+  ];
+  const p = palettes[i % palettes.length];
+
+  if (ad.angle === 'social proof') {
+    // Typographic poster (Ideogram brief)
+    return `<svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">
+      <rect width="400" height="400" fill="${p[2]}"/>
+      <text x="30" y="100" font-family="Fraunces, Georgia" font-size="44" font-weight="700" fill="${p[0]}" letter-spacing="-2">1,247</text>
+      <text x="30" y="150" font-family="Fraunces, Georgia" font-size="28" font-weight="500" font-style="italic" fill="${p[0]}">people skipped</text>
+      <text x="30" y="185" font-family="Fraunces, Georgia" font-size="28" font-weight="500" font-style="italic" fill="${p[0]}">the deli this month.</text>
+      <line x1="30" y1="230" x2="120" y2="230" stroke="${p[1]}" stroke-width="3"/>
+      <text x="30" y="260" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="${p[1]}" letter-spacing="2">RIVERLINE COFFEE CO.</text>
+      <rect x="280" y="240" width="80" height="120" rx="4" fill="${p[0]}" opacity="0.85"/>
+      <rect x="295" y="260" width="50" height="80" fill="${p[1]}" opacity="0.5"/>
+    </svg>`;
+  }
+  if (ad.angle === 'contrarian') {
+    // Editorial illustration vibe (Imagen brief)
+    return `<svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">
+      <rect width="400" height="400" fill="${p[2]}"/>
+      <circle cx="200" cy="180" r="140" fill="${p[1]}" opacity="0.25"/>
+      <ellipse cx="200" cy="290" rx="80" ry="14" fill="${p[0]}" opacity="0.35"/>
+      <path d="M170 220 Q200 150, 230 220 L235 290 Q200 310, 165 290 Z" fill="${p[0]}"/>
+      <rect x="195" y="200" width="10" height="20" fill="${p[0]}"/>
+      <path d="M100 100 Q200 80, 300 100" stroke="${p[1]}" stroke-width="2" fill="none" opacity="0.6"/>
+      <text x="50" y="350" font-family="Fraunces, Georgia" font-size="13" font-style="italic" fill="${p[0]}">at 3 a.m., again</text>
+    </svg>`;
+  }
+  if (ad.angle === 'curiosity') {
+    // Macro glass shot (Kling brief)
+    return `<svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="g${i}" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${p[1]}"/>
+          <stop offset="100%" stop-color="${p[0]}"/>
+        </linearGradient>
+      </defs>
+      <rect width="400" height="400" fill="url(#g${i})"/>
+      <rect x="120" y="40" width="160" height="320" rx="8" fill="${p[2]}" opacity="0.18"/>
+      <rect x="135" y="90" width="130" height="240" rx="4" fill="${p[0]}" opacity="0.85"/>
+      <rect x="140" y="100" width="40" height="220" rx="4" fill="${p[2]}" opacity="0.15"/>
+      ${Array.from({length:8}, (_,j) =>
+        `<circle cx="${145 + j*15}" cy="${140 + (j*23)%180}" r="${2 + j%3}" fill="${p[2]}" opacity="0.7"/>`
+      ).join('')}
+      <ellipse cx="200" cy="60" rx="80" ry="20" fill="${p[2]}" opacity="0.2"/>
+    </svg>`;
+  }
+  if (ad.angle === 'concrete outcome') {
+    // Top-down shipping box (FLUX brief)
+    return `<svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">
+      <rect width="400" height="400" fill="${p[2]}"/>
+      <rect x="60" y="80" width="280" height="240" rx="6" fill="${p[1]}" opacity="0.85"/>
+      <rect x="80" y="100" width="240" height="200" fill="${p[0]}" opacity="0.7"/>
+      <rect x="110" y="130" width="50" height="140" rx="4" fill="${p[2]}" opacity="0.3"/>
+      <rect x="175" y="130" width="50" height="140" rx="4" fill="${p[2]}" opacity="0.3"/>
+      <rect x="240" y="130" width="50" height="140" rx="4" fill="${p[2]}" opacity="0.3"/>
+      <rect x="118" y="155" width="34" height="90" rx="2" fill="${p[1]}"/>
+      <rect x="183" y="155" width="34" height="90" rx="2" fill="${p[1]}"/>
+      <rect x="248" y="155" width="34" height="90" rx="2" fill="${p[1]}"/>
+      <text x="200" y="360" text-anchor="middle" font-family="Fraunces, Georgia" font-size="14" font-style="italic" fill="${p[0]}">arriving Tuesday</text>
+    </svg>`;
+  }
+  // Default: identity / lifestyle (FLUX brief)
+  return `<svg viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <radialGradient id="r${i}" cx="0.7" cy="0.3" r="0.8">
+        <stop offset="0%" stop-color="${p[2]}" stop-opacity="0.9"/>
+        <stop offset="100%" stop-color="${p[0]}"/>
+      </radialGradient>
+    </defs>
+    <rect width="400" height="400" fill="url(#r${i})"/>
+    <rect x="50" y="200" width="300" height="160" fill="${p[0]}" opacity="0.4"/>
+    <rect x="220" y="120" width="60" height="100" rx="4" fill="${p[1]}"/>
+    <rect x="225" y="135" width="50" height="70" fill="${p[2]}" opacity="0.7"/>
+    <rect x="80" y="160" width="100" height="120" rx="6" fill="${p[1]}" opacity="0.85"/>
+    <circle cx="130" cy="200" r="18" fill="${p[2]}" opacity="0.6"/>
+    <circle cx="130" cy="200" r="10" fill="${p[0]}"/>
+    <path d="M250 230 Q260 200, 270 230" stroke="${p[2]}" stroke-width="2" fill="none" opacity="0.7"/>
+    <path d="M260 220 Q270 195, 280 220" stroke="${p[2]}" stroke-width="2" fill="none" opacity="0.5"/>
+  </svg>`;
+}
+
+function renderOptimization() {
+  const el = document.getElementById('optimize-content');
+  if (el.dataset.rendered) return;
+  el.dataset.rendered = '1';
+  const O = OPTIMIZATION;
+
+  const totals = Object.values(METRICS_AFTER_7_DAYS).reduce((acc, m) => ({
+    spend: acc.spend + m.spend,
+    conv: acc.conv + m.conv,
+    clicks: acc.clicks + m.clicks
+  }), { spend: 0, conv: 0, clicks: 0 });
+
+  el.innerHTML = `
+    <div class="tldr" style="margin: 14px 0 16px;">
+      <h3>TL;DR · 7 days in</h3>
+      <p>${O.tldr}</p>
+    </div>
+
+    <div class="row cols-2">
+      <div class="card" style="margin: 0; padding: 12px;">
+        <div class="label">Spend</div>
+        <div style="font-family: 'Fraunces', serif; font-size: 22px;">$${totals.spend}</div>
+        <div class="small muted">${totals.conv} conversions · $${(totals.spend / totals.conv).toFixed(2)} blended CPA</div>
+      </div>
+      <div class="card" style="margin: 0; padding: 12px;">
+        <div class="label">Verdict</div>
+        <div style="font-family: 'Fraunces', serif; font-size: 22px;">${O.actions.filter(a => a.kind === 'scale_up').length}↑ ${O.actions.filter(a => a.kind === 'kill').length}✕ ${O.actions.filter(a => a.kind === 'hold').length}⏸</div>
+        <div class="small muted">scale · kill · hold</div>
+      </div>
+    </div>
+
+    <details style="margin-top: 14px;">
+      <summary class="muted small">Read the full rationale</summary>
+      <div style="margin-top: 12px;">
+        ${O.raw.split('\n\n').map(p => `<p style="margin: 0 0 10px;">${escapeHtml(p)}</p>`).join('')}
+      </div>
+    </details>
+
+    <div style="margin-top: 16px;">
+      <div class="label">Per-ad results</div>
+      ${ADS.map((ad, i) => {
+        const m = METRICS_AFTER_7_DAYS[ad.id];
+        const action = O.actions.find(a => a.adId === ad.id);
+        const actionPill = action ? renderActionPill(action.kind) : '';
+        return `
+          <div class="card" style="padding: 12px; margin: 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+              <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                <span class="pill">#${i+1} · ${ad.angle}</span>
+                ${actionPill}
+              </div>
+            </div>
+            <div style="font-size: 13px; margin-top: 6px;">${escapeHtml(ad.headline)}</div>
+            <div class="metrics">
+              <div class="metric"><div class="lab">Spend</div><div class="val">$${m.spend}</div></div>
+              <div class="metric"><div class="lab">CTR</div><div class="val">${m.ctr.toFixed(2)}%</div></div>
+              <div class="metric"><div class="lab">CPA</div><div class="val">$${m.cpa.toFixed(0)}</div></div>
+              <div class="metric"><div class="lab">Freq</div><div class="val">${m.freq.toFixed(1)}</div></div>
+            </div>
+            ${action ? `<div class="why" style="margin-top: 10px; padding-top: 10px;"><b>Action:</b> ${escapeHtml(action.reason)}</div>` : ''}
+          </div>
+        `;
+      }).join('')}
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" onclick="goto('chat')">Ask the chat about it →</button>
+    </div>
+  `;
+}
+
+function renderActionPill(kind) {
+  const map = {
+    scale_up: ['green', '↑ scale up'],
+    scale_down: ['amber', '↓ scale down'],
+    kill: ['red', '✕ kill'],
+    pause: ['red', '⏸ pause'],
+    hold: ['amber', '⏸ hold'],
+    duplicate_and_tweak: ['blue', '⎘ duplicate']
+  };
+  const [color, label] = map[kind] || ['', kind];
+  return `<span class="pill ${color}">${label}</span>`;
+}
+
+/* =========================================================================
+   Chat
+   ======================================================================= */
+
+let chatInitted = false;
+const chatHistory = [];
+
+function initChat() {
+  if (chatInitted) return;
+  chatInitted = true;
+  pushBot(`I've got Riverline's account loaded — the analysis, the five ads, the seven-day metrics, the optimization log. Ask me anything. The suggestions below are good starting points if you don't know where to begin.`);
+  renderSuggestions();
+  document.getElementById('chat-send').addEventListener('click', sendChat);
+  document.getElementById('chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
+  });
+}
+
+function renderSuggestions() {
+  const el = document.getElementById('suggestions');
+  el.innerHTML = SUGGESTIONS.map(s => `<button class="suggestion" onclick="useSuggestion('${escapeHtml(s)}')">${escapeHtml(s)}</button>`).join('');
+}
+
+function useSuggestion(s) {
+  document.getElementById('chat-input').value = s;
+  sendChat();
+}
+
+function pushUser(text) {
+  chatHistory.push({ role: 'user', text });
+  const stream = document.getElementById('chat-stream');
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.textContent = text;
+  stream.appendChild(div);
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function pushBot(text, animate = false) {
+  chatHistory.push({ role: 'bot', text });
+  const stream = document.getElementById('chat-stream');
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  stream.appendChild(div);
+  if (!animate) {
+    div.textContent = text;
+    stream.scrollTop = stream.scrollHeight;
+    return;
+  }
+  // Fake streaming — type the response a chunk at a time
+  let i = 0;
+  const chunkSize = 4;
+  const tick = () => {
+    if (i >= text.length) {
+      stream.scrollTop = stream.scrollHeight;
+      return;
+    }
+    div.textContent = text.slice(0, i + chunkSize);
+    i += chunkSize;
+    stream.scrollTop = stream.scrollHeight;
+    setTimeout(tick, 18);
+  };
+  tick();
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  pushUser(q);
+  setTimeout(() => {
+    const a = answerFor(q);
+    pushBot(a, true);
+  }, 250);
+}
+
+function answerFor(q) {
+  const lower = q.toLowerCase();
+  let best = null;
+  let bestScore = 0;
+  for (const r of CHAT_RESPONSES) {
+    const score = r.match.reduce((acc, kw) => acc + (lower.includes(kw) ? 1 : 0), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return best ? best.answer : FALLBACK_CHAT;
+}
+
+/* =========================================================================
+   Utils
+   ======================================================================= */
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+renderNav();
+</script>
+
+</body>
+</html>
