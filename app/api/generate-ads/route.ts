@@ -43,16 +43,22 @@ export async function POST(req: Request) {
   const creatives = await askJson<AdCreative[]>({
     system: AD_GENERATION_SYSTEM,
     user,
+    task: "creative_battery",
     maxTokens: 8000,
   });
 
-  // Route + generate an image for each variant in parallel.
+  // Route + generate an image for each variant in parallel. We pass the
+  // canonical brand colors/fonts (when Brandfetch returned them) so the
+  // image router can lean toward Recraft v3 for typography-heavy briefs
+  // and lock in exact hex values.
   const withImages = await Promise.all(
     creatives.map(async (c) => {
       const decision = await routeImage({
         imagePrompt: c.imagePrompt,
         angle: c.angle,
         brandVoice: a.voice,
+        brandColors: a.brandColors,
+        brandFonts: a.brandFonts,
       });
       const img = await generateImage({ decision });
       return { creative: c, image: img };

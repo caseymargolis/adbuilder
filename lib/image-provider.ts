@@ -29,6 +29,7 @@ export type ImageProviderId =
   | "ideogram-v3"
   | "flux-1.1-pro-ultra"
   | "imagen-4"
+  | "recraft-v3"
   | "gpt-image-1";
 
 export interface ImageRouteDecision {
@@ -49,18 +50,31 @@ export async function routeImage(args: {
   imagePrompt: string;
   angle: string;
   brandVoice: string;
+  brandColors?: string[]; // hex strings, from Brandfetch when available
+  brandFonts?: string[];
 }): Promise<ImageRouteDecision> {
   const user = [
     "BRIEF:",
     `- Angle: ${args.angle}`,
     `- Brand voice: ${args.brandVoice}`,
+    args.brandColors && args.brandColors.length
+      ? `- Canonical brand colors: ${args.brandColors.join(", ")} (use these in the refined prompt where the design calls for it)`
+      : "",
+    args.brandFonts && args.brandFonts.length
+      ? `- Canonical brand fonts: ${args.brandFonts.join(", ")}`
+      : "",
     `- Prompt: ${args.imagePrompt}`,
     "",
-    "Pick the best provider and rewrite the prompt for it.",
-  ].join("\n");
+    "Pick the best provider and rewrite the prompt for it. If we have canonical",
+    "brand colors and the brief calls for typography or vector-style design,",
+    "lean toward recraft-v3 — it actually respects exact hex values.",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return await askJson<ImageRouteDecision>({
     system: IMAGE_ROUTER_SYSTEM,
     user,
+    task: "util",
     maxTokens: 1200,
   });
 }
@@ -81,6 +95,8 @@ export async function generateImage(args: {
       return callFlux(decision);
     case "imagen-4":
       return callImagen(decision);
+    case "recraft-v3":
+      return callRecraft(decision);
     case "gpt-image-1":
       return callGptImage(decision);
   }
@@ -175,6 +191,27 @@ async function callImagen(decision: ImageRouteDecision): Promise<GeneratedImage>
     decision,
     mock: false,
   };
+}
+
+async function callRecraft(decision: ImageRouteDecision): Promise<GeneratedImage> {
+  const key = process.env.RECRAFT_API_KEY;
+  if (!key) return placeholder(decision);
+  // https://www.recraft.ai/docs — recraftv3 image generation
+  const res = await fetch("https://external.api.recraft.ai/v1/images/generations", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: decision.refinedPrompt,
+      style: "digital_illustration",
+      model: "recraftv3",
+      size: "1024x1024",
+    }),
+  });
+  if (!res.ok) return placeholder(decision);
+  const data = (await res.json()) as { data?: Array<{ url: string }> };
+  const url = data.data?.[0]?.url;
+  if (!url) return placeholder(decision);
+  return { url, provider: "recraft-v3", decision, mock: false };
 }
 
 async function callGptImage(decision: ImageRouteDecision): Promise<GeneratedImage> {

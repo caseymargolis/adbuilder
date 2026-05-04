@@ -7,11 +7,11 @@ LinkedIn version.
 
 ## What it actually does
 
-1. **Reads the client's site.** Fetches the homepage and briefs Claude Opus 4.7
-   on what the business actually sells, who's buying, and what'll bite us. Two
-   reader paths: a fast `fetch`-based one (default) and an optional headless
-   Chromium pass via Playwright for JS-rendered SPAs. The app upgrades
-   automatically when the headless dep is installed.
+1. **Reads the client's site, brand, market, and customers in parallel.**
+   The analysis isn't "have an LLM look at the homepage." It's a routed
+   pipeline that uses the best tool for each sub-job (see the routing table
+   below) and then asks Claude Opus 4.7 to synthesize. Provenance of every
+   source is shown in the analysis so you know what the read is built on.
 2. **Generates a 5-variant test battery.** Each variant pulls a different lever
    (pain-point, social proof, contrarian, outcome-specific, curiosity) and
    says *why* it should work for *this* audience.
@@ -43,6 +43,43 @@ LinkedIn version.
    and tweak. Runs manually **or** on a daily schedule (see *Daily cron* below).
 7. **Chat companion.** Streams answers from Claude with the client's full
    account loaded in context. Ask "is ad 3 worth keeping?" and get a verdict.
+
+## Best tool per job — the routing table
+
+We don't run everything through Claude. Each sub-job goes to the model or
+service that actually wins at it. Every external service is independently
+optional — skip what you don't have a key for, and the analyzer surfaces the
+gap.
+
+| Job | Tool of choice | Why it wins | Module |
+|---|---|---|---|
+| Brand asset extraction (logos, hex colors, fonts) | **Brandfetch** | Curated DB of 60M+ brands; returns canonical hex values and Google-Fonts-mapped names. Beats LLM guessing from CSS. | `lib/brand-extractor.ts` |
+| Deep web scraping (multi-page, SPA-aware) | **Firecrawl** | LLM-aware scraper, handles JS rendering, returns clean Markdown, `/map` ranks subpages by conversion relevance. | `lib/web-scraper.ts` |
+| Headless fallback when Firecrawl isn't set | **Playwright** | Full browser, free, self-hosted. | `lib/site-reader-headless.ts` |
+| Competitor / category research | **Exa** + **Perplexity Sonar** | Exa for semantic competitor lookup with citations; Perplexity for live category state-of-play. | `lib/market-research.ts` |
+| What competitors run on Meta right now | **Meta Ad Library API** | Public API. Every active ad, every advertiser. Reuses `META_ACCESS_TOKEN`. | `lib/market-research.ts` |
+| Voice-of-customer (real customers' actual words) | **Reddit JSON** + **Apify Trustpilot** | The phrases real customers use beat brand-About copy for ad voice. Reddit is free, Trustpilot is sub-cent per review. | `lib/reviews-fetcher.ts` |
+| Synthesis of all of the above into a strategy briefing | **Claude Opus 4.7** / `effort: high` | Best LLM in 2026 at literary voice and strategic synthesis. | `lib/anthropic.ts` |
+| 5-variant ad creative battery | **Claude Opus 4.7** / `effort: high` | Creative quality is the whole point — don't downgrade. | `lib/copy-router.ts` |
+| Optimization decisions on live ad data | **Claude Opus 4.7** / `effort: high` | Judgment-heavy multi-factor reasoning — Opus territory. | `lib/copy-router.ts` |
+| Chat companion (streaming, latency-sensitive) | **Claude Sonnet 4.6** / `effort: medium` | Faster + cheaper streaming, no measurable quality loss for conversational Q&A. | `lib/copy-router.ts` |
+| Quick utility (image router pick, classification, label extraction) | **Claude Haiku 4.5** / `effort: low` | Routing decisions don't need Opus. | `lib/copy-router.ts` |
+| Image gen — text-in-image / posters | **Ideogram 3.0** | Only model that consistently renders typography. | `lib/image-provider.ts` |
+| Image gen — photoreal product / lifestyle | **FLUX 1.1 Pro Ultra** | Best photoreal in 2026. Glass, fiber, lighting. | `lib/image-provider.ts` |
+| Image gen — illustration / editorial | **Imagen 4** | Best stylized output, brand-safe. | `lib/image-provider.ts` |
+| Image gen — brand-consistent design (vector / typography with exact hex) | **Recraft v3** | Purpose-built for brand-aligned design; respects exact colors and fonts. | `lib/image-provider.ts` |
+| Image gen — generalist fallback | **gpt-image-1** | Forgiving; good when the brief is mixed. | `lib/image-provider.ts` |
+| Video gen — photoreal + native audio | **Veo 3** | Best photoreal video with sound. | `lib/video-provider.ts` |
+| Video gen — narrative / longer | **Sora 2** | Best 10-20s narrative clips. | `lib/video-provider.ts` |
+| Video gen — cinematic motion | **Runway Gen-4** | Best camera control, mood. | `lib/video-provider.ts` |
+| Video gen — physics (food, liquids, glass) | **Kling 2** | Best at real-world physics. | `lib/video-provider.ts` |
+
+**The routing isn't dumb either.** For images and video, Claude reads the
+ad brief and *picks* the provider — and now we feed it canonical brand
+colors/fonts from Brandfetch, so it leans toward Recraft v3 when the brief
+calls for typography-heavy design. The decision (provider + reason) is
+persisted with each ad so we can tie performance back to the provider over
+time and let the router improve.
 
 ## Voice & tone (don't skip this)
 

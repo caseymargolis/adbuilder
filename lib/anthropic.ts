@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { CopyTask } from "./copy-router";
+import { pickModel } from "./copy-router";
 
-export const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-7";
+export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-7";
 
 let _client: Anthropic | null = null;
 export function getClient(): Anthropic {
@@ -16,21 +18,28 @@ export function getClient(): Anthropic {
 }
 
 /**
- * Single-shot JSON response. Uses adaptive thinking + high effort on Opus 4.7.
+ * Single-shot JSON response. Per-call task type picks the model + effort
+ * via copy-router; you can also override directly with `model`/`effort`.
  *
  * The prompt is expected to instruct the model to return JSON only.
  */
 export async function askJson<T = unknown>(params: {
   system: string;
   user: string;
+  task?: CopyTask;
+  model?: string;
+  effort?: "low" | "medium" | "high" | "max";
   maxTokens?: number;
 }): Promise<T> {
   const client = getClient();
+  const choice = params.task ? pickModel(params.task) : null;
+  const model = params.model ?? choice?.model ?? DEFAULT_MODEL;
+  const effort = params.effort ?? choice?.effort ?? "high";
   const response = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: params.maxTokens ?? 16000,
     thinking: { type: "adaptive" },
-    output_config: { effort: "high" },
+    output_config: { effort },
     system: [
       { type: "text", text: params.system, cache_control: { type: "ephemeral" } },
     ],
@@ -45,20 +54,26 @@ export async function askJson<T = unknown>(params: {
 }
 
 /**
- * Streaming chat completion. Streams text deltas. Returns an async iterable of
- * string chunks suitable for piping into a Response body.
+ * Streaming chat completion. Streams text deltas. Returns an async iterable
+ * of string chunks suitable for piping into a Response body.
  */
 export async function* streamChat(params: {
   system: string;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
+  task?: CopyTask;
+  model?: string;
+  effort?: "low" | "medium" | "high" | "max";
   maxTokens?: number;
 }): AsyncGenerator<string, void, void> {
   const client = getClient();
+  const choice = params.task ? pickModel(params.task) : null;
+  const model = params.model ?? choice?.model ?? DEFAULT_MODEL;
+  const effort = params.effort ?? choice?.effort ?? "medium";
   const stream = client.messages.stream({
-    model: MODEL,
+    model,
     max_tokens: params.maxTokens ?? 8000,
     thinking: { type: "adaptive" },
-    output_config: { effort: "medium" },
+    output_config: { effort },
     system: [
       { type: "text", text: params.system, cache_control: { type: "ephemeral" } },
     ],
@@ -79,13 +94,11 @@ export async function* streamChat(params: {
  * tiny resilient parser that extracts the first valid JSON object or array.
  */
 export function parseJsonLoose<T>(text: string): T {
-  // Strip markdown fences.
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const candidate = fenceMatch ? fenceMatch[1] : text;
   try {
     return JSON.parse(candidate) as T;
   } catch {
-    // Fall back: find the first { or [ and the last matching bracket.
     const first = candidate.search(/[\[{]/);
     const last = Math.max(candidate.lastIndexOf("]"), candidate.lastIndexOf("}"));
     if (first >= 0 && last > first) {

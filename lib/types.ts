@@ -32,6 +32,27 @@ export interface WebsiteAnalysis {
   voice: string;
   risks: string[];
   raw: string; // full report in plain-English nerd voice
+  /**
+   * Provenance of the data the report was built on. Lets the UI show
+   * "based on Brandfetch + Firecrawl + Exa + Reddit" instead of "trust me bro".
+   */
+  sources?: {
+    brand?: "brandfetch" | "fallback" | "none";
+    site?: "firecrawl" | "playwright" | "fetch";
+    market?: Array<"exa" | "perplexity" | "meta-ad-library">;
+    voiceOfCustomer?: Array<"trustpilot" | "g2" | "reddit" | "appstore">;
+  };
+  /**
+   * Canonical brand assets pulled from Brandfetch (or empty if unavailable).
+   * Used by image generation to lock in correct colors/fonts.
+   */
+  brandColors?: string[];
+  brandFonts?: string[];
+  brandLogoUrl?: string;
+  /** Top competitors with one-line positioning each. */
+  competitors?: Array<{ name: string; domain: string; note: string }>;
+  /** What competitors are running on Meta right now. */
+  competitorAdsSummary?: string;
 }
 
 export type AdStatus =

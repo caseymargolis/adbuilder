@@ -21,7 +21,12 @@ export async function POST(req: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const delta of streamChat({ system, messages, maxTokens: 4000 })) {
+        for await (const delta of streamChat({
+          system,
+          messages,
+          task: "chat",
+          maxTokens: 4000,
+        })) {
           controller.enqueue(encoder.encode(delta));
         }
       } catch (e) {

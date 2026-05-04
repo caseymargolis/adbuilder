@@ -65,6 +65,7 @@ export async function POST(req: Request) {
   const out = await askJson<OptimizerOutput>({
     system: OPTIMIZATION_SYSTEM,
     user,
+    task: "strategy",
     maxTokens: 6000,
   });
 
