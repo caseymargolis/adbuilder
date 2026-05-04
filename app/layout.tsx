@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { authEnabled } from "@/lib/auth";
+import SignOutButton from "@/components/SignOutButton";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="flex items-center gap-5 text-sm">
               <Link href="/clients" className="hover:underline">Clients</Link>
               <Link href="/clients/new" className="btn btn-primary">+ New client</Link>
+              {authEnabled() && <SignOutButton />}
             </nav>
           </div>
         </header>

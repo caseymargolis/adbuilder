@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { putBlob } from "@/lib/blob-storage";
 import { updateAd } from "@/lib/db";
 import type { EditorState } from "@/lib/types";
 
@@ -14,12 +13,11 @@ import type { EditorState } from "@/lib/types";
  *     editorState: JSON string (EditorState)
  *     video: File (webm / mp4 blob produced by MediaRecorder)
  *
- * We write the blob to public/uploads/<adId>.webm so the browser and the Meta
- * API client (when configured with a publicly-reachable host) can both fetch
- * it. For production you'd swap this for S3 or Vercel Blob — the write path
- * is localized to this file.
+ * Stored via lib/blob-storage. On Vercel that's Vercel Blob (when
+ * BLOB_READ_WRITE_TOKEN is set); locally, public/uploads.
  */
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const form = await req.formData();
@@ -34,18 +32,14 @@ export async function POST(req: Request) {
   const editorState = JSON.parse(stateStr) as EditorState;
   const ext = file.type.includes("mp4") ? "mp4" : "webm";
   const filename = `${adId}.${ext}`;
-  const uploadsDir = path.join(process.cwd(), "public", "uploads");
-  await fs.mkdir(uploadsDir, { recursive: true });
-  const filepath = path.join(uploadsDir, filename);
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(filepath, buffer);
 
-  const publicUrl = `/uploads/${filename}`;
+  const result = await putBlob({ filename, blob: file });
+
   const updated = await updateAd(clientId, adId, (a) => ({
     ...a,
-    editedVideoUrl: publicUrl,
+    editedVideoUrl: result.url,
     editorState: { ...editorState, updatedAt: new Date().toISOString() },
   }));
 
-  return NextResponse.json({ ad: updated, url: publicUrl });
+  return NextResponse.json({ ad: updated, url: result.url, backend: result.backend });
 }

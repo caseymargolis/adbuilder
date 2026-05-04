@@ -10,6 +10,10 @@ const CreateSchema = z.object({
   monthlyBudgetUsd: z.coerce.number().min(100),
   offer: z.string().min(1),
   audienceNotes: z.string().default(""),
+  metaAdAccountId: z.string().optional(),
+  metaPageId: z.string().optional(),
+  metaAccountName: z.string().optional(),
+  notifyEmail: z.string().email().optional().or(z.literal("")),
 });
 
 export async function GET() {
@@ -26,12 +30,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  const { notifyEmail, ...rest } = parsed.data;
   const client: ClientRecord = {
     id: newId("c"),
     createdAt: new Date().toISOString(),
     ads: [],
     optimizations: [],
-    ...parsed.data,
+    notifyEmail: notifyEmail || undefined,
+    ...rest,
   };
   await upsertClient(client);
   return NextResponse.json({ client }, { status: 201 });

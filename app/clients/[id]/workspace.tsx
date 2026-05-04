@@ -26,9 +26,27 @@ export default function ClientWorkspace({
     }
   }
 
+  const [analyzePhase, setAnalyzePhase] = useState<string>("");
+
   async function runAnalyze() {
     setBusy("analyze");
     setError(null);
+    // Cycle through phase strings while the (long) request is in flight,
+    // so the user knows the system isn't frozen.
+    const phases = [
+      "Pulling brand assets from Brandfetch…",
+      "Crawling the site (Firecrawl)…",
+      "Asking Exa for direct competitors…",
+      "Checking what competitors are running on Meta…",
+      "Pulling voice-of-customer from Reddit + Trustpilot…",
+      "Synthesizing — Claude Opus 4.7 is thinking…",
+    ];
+    let i = 0;
+    setAnalyzePhase(phases[0]);
+    const interval = setInterval(() => {
+      i = Math.min(i + 1, phases.length - 1);
+      setAnalyzePhase(phases[i]);
+    }, 9000);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -40,6 +58,8 @@ export default function ClientWorkspace({
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      clearInterval(interval);
+      setAnalyzePhase("");
       setBusy(null);
     }
   }
@@ -111,9 +131,16 @@ export default function ClientWorkspace({
     <div className="grid lg:grid-cols-[1fr_380px] gap-8">
       <div className="space-y-8 min-w-0">
         <header>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Link href="/clients" className="text-sm text-[color:var(--muted)] hover:underline">← Clients</Link>
             <span className="pill">{client.goal.replace("_", " ")}</span>
+            {client.metaAdAccountId ? (
+              <span className="pill pill-green">
+                Meta connected{client.metaAccountName ? ` · ${client.metaAccountName}` : ""}
+              </span>
+            ) : (
+              <span className="pill pill-amber">Mock mode — no Meta config</span>
+            )}
           </div>
           <h1 className="font-display text-3xl font-semibold mt-2">{client.name}</h1>
           <p className="text-[color:var(--muted)]">
@@ -144,17 +171,24 @@ export default function ClientWorkspace({
             )
           }
           action={
-            <button
-              className="btn btn-primary"
-              onClick={runAnalyze}
-              disabled={busy === "analyze"}
-            >
-              {busy === "analyze"
-                ? "Reading…"
-                : client.analysis
-                  ? "Re-analyze"
-                  : "Analyze the site"}
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                className="btn btn-primary"
+                onClick={runAnalyze}
+                disabled={busy === "analyze"}
+              >
+                {busy === "analyze"
+                  ? "Reading…"
+                  : client.analysis
+                    ? "Re-analyze"
+                    : "Analyze the site"}
+              </button>
+              {busy === "analyze" && analyzePhase && (
+                <div className="text-xs text-[color:var(--muted)] italic max-w-[16rem] text-right">
+                  {analyzePhase}
+                </div>
+              )}
+            </div>
           }
         />
 

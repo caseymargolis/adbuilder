@@ -14,6 +14,12 @@ export interface ClientRecord {
   monthlyBudgetUsd: number;
   audienceNotes: string;
   offer: string; // 1-sentence description of the offer / product
+  /** Per-client Meta config — overrides env-var defaults. */
+  metaAdAccountId?: string;
+  metaPageId?: string;
+  metaAccountName?: string; // pulled from validateMetaConfig at save time
+  /** Where digest emails / launch confirmations go. */
+  notifyEmail?: string;
   createdAt: string;
   analysis?: WebsiteAnalysis;
   ads: AdRecord[];

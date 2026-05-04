@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { askJson } from "@/lib/anthropic";
 import { appendOptimization, getClient, newId, updateAd } from "@/lib/db";
-import { getAdMetrics, pauseAd, resumeAd, updateAdBudget } from "@/lib/meta";
+import { sendOptimizationDigest } from "@/lib/email";
+import {
+  getAdMetrics,
+  getMetaConfig,
+  pauseAd,
+  resumeAd,
+  updateAdBudget,
+} from "@/lib/meta";
 import { OPTIMIZATION_SYSTEM } from "@/lib/prompts";
 import type { AdStatus, OptimizationAction, OptimizationLog } from "@/lib/types";
 
@@ -19,6 +26,11 @@ export async function POST(req: Request) {
   const client = await getClient(clientId);
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const config = getMetaConfig({
+    adAccountId: client.metaAdAccountId,
+    pageId: client.metaPageId,
+  });
+
   // Refresh metrics for all launched ads
   const liveAds = client.ads.filter((a) =>
     ["live", "queued", "winner", "paused"].includes(a.status),
@@ -26,7 +38,7 @@ export async function POST(req: Request) {
   const metricsRefreshed = await Promise.all(
     liveAds.map(async (ad) => {
       if (!ad.metaAdId) return ad;
-      const m = await getAdMetrics(ad.metaAdId);
+      const m = await getAdMetrics(config, ad.metaAdId);
       return await updateAd(client.id, ad.id, (x) => ({ ...x, metrics: m }));
     }),
   );
@@ -83,20 +95,19 @@ export async function POST(req: Request) {
               ? ad.status
               : ad.status;
         if (action.kind === "pause" || action.kind === "kill") {
-          await pauseAd(ad.metaAdId);
+          if (config) await pauseAd(config, ad.metaAdId);
         } else if (action.kind === "scale_up" || action.kind === "scale_down") {
-          if (ad.metaAdSetId) {
+          if (config && ad.metaAdSetId) {
             const current = ad.metrics?.spend ?? 20;
             const factor = action.kind === "scale_up" ? 1.5 : 0.6;
             await updateAdBudget({
+              config,
               adSetId: ad.metaAdSetId,
               dailyBudgetUsd: Math.max(5, current * factor),
             });
           }
         } else if (action.kind === "duplicate_and_tweak") {
-          // Surface as a suggestion; actual duplication would need a second
-          // pass of ad generation. Keep the ad live for now.
-          await resumeAd(ad.metaAdId);
+          if (config) await resumeAd(config, ad.metaAdId);
         }
         if (newStatus !== ad.status) {
           await updateAd(client.id, ad.id, (x) => ({
@@ -120,6 +131,18 @@ export async function POST(req: Request) {
     raw: out.raw,
   };
   await appendOptimization(client.id, log);
+
+  // Fire-and-forget the digest email (Resend, when configured).
+  if (client.notifyEmail) {
+    sendOptimizationDigest({
+      to: client.notifyEmail,
+      clientName: client.name,
+      log,
+      appliedCount: applied.filter((a) => a.ok).length,
+    }).catch(() => {
+      /* never fail the optimize call on email errors */
+    });
+  }
 
   return NextResponse.json({ log, applied });
 }
