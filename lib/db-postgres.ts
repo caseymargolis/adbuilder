@@ -20,7 +20,6 @@ let _pool: any = null;
 async function pool() {
   if (_pool) return _pool;
   // Dynamic import so the JSON path doesn't require `pg`.
-  // @ts-expect-error — optional peer dep; present only when DATABASE_URL is set
   const pg = await import("pg").catch(() => null);
   if (!pg) {
     throw new Error(
