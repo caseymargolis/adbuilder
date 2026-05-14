@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { CopyTask } from "./copy-router";
 import { pickModel } from "./copy-router";
 
-export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-7";
+export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-20250514";
 
 let _client: Anthropic | null = null;
 export function getClient(): Anthropic {
@@ -22,6 +22,8 @@ export function getClient(): Anthropic {
  * via copy-router; you can also override directly with `model`/`effort`.
  *
  * The prompt is expected to instruct the model to return JSON only.
+ *
+ * Uses streaming to avoid the 10-minute timeout requirement from the SDK.
  */
 export async function askJson<T = unknown>(params: {
   system: string;
@@ -35,21 +37,24 @@ export async function askJson<T = unknown>(params: {
   const choice = params.task ? pickModel(params.task) : null;
   const model = params.model ?? choice?.model ?? DEFAULT_MODEL;
   const effort = params.effort ?? choice?.effort ?? "high";
-  const response = await client.messages.create({
+  const stream = client.messages.stream({
     model,
     max_tokens: params.maxTokens ?? 16000,
-    thinking: { type: "adaptive" },
-    output_config: { effort },
     system: [
       { type: "text", text: params.system, cache_control: { type: "ephemeral" } },
     ],
     messages: [{ role: "user", content: params.user }],
   });
-  const text = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("\n")
-    .trim();
+  let text = "";
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      text += event.delta.text;
+    }
+  }
+  text = text.trim();
   return parseJsonLoose<T>(text);
 }
 
@@ -72,8 +77,6 @@ export async function* streamChat(params: {
   const stream = client.messages.stream({
     model,
     max_tokens: params.maxTokens ?? 8000,
-    thinking: { type: "adaptive" },
-    output_config: { effort },
     system: [
       { type: "text", text: params.system, cache_control: { type: "ephemeral" } },
     ],

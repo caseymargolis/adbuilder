@@ -75,3 +75,17 @@ export async function appendOptimization(
   c.optimizations.unshift(log);
   await saveClients(all);
 }
+
+export async function removeAd(clientId: string, adId: string): Promise<void> {
+  const all = await listClients();
+  const c = all.find((x) => x.id === clientId);
+  if (!c) throw new Error("client not found");
+  c.ads = c.ads.filter((a) => a.id !== adId);
+  await saveClients(all);
+}
+
+export async function deleteClient(clientId: string): Promise<void> {
+  const all = await listClients();
+  const filtered = all.filter((c) => c.id !== clientId);
+  await saveClients(filtered);
+}

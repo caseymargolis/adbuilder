@@ -7,14 +7,21 @@ import type { AdRecord } from "@/lib/types";
 export default function AdCard({
   ad,
   launched,
+  onDelete,
+  onRegenerate,
 }: {
   ad: AdRecord;
   launched?: boolean;
+  onDelete?: () => void;
+  onRegenerate?: () => void;
 }) {
   const m = ad.metrics;
   const hasVideo = !!ad.videoUrl;
   const videoPreview = ad.editedVideoUrl || ad.videoUrl;
   const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regeneratingVideo, setRegeneratingVideo] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function generateVideoVariant() {
@@ -36,6 +43,23 @@ export default function AdCard({
     } catch (e) {
       setError((e as Error).message);
       setGeneratingVideo(false);
+    }
+  }
+
+  async function handleRegenerateVideo() {
+    setRegeneratingVideo(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ads/${ad.id}/regenerate-video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: ad.clientId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Regenerate video failed");
+      window.location.reload();
+    } catch (e) {
+      setError((e as Error).message);
+      setRegeneratingVideo(false);
     }
   }
 
@@ -81,7 +105,7 @@ export default function AdCard({
         <p className="text-sm">{ad.creative.primaryText}</p>
         <p className="text-xs text-[color:var(--muted)]">{ad.creative.description}</p>
         <div className="text-xs">
-          <span className="pill pill-amber">{ad.creative.cta.replace("_", " ")}</span>
+          <span className="pill pill-amber">{(ad.creative.cta ?? "LEARN_MORE").replace("_", " ")}</span>
         </div>
         <div className="pt-2 border-t border-[color:var(--line)] text-xs text-[color:var(--muted)]">
           <b>Why this should work:</b> {ad.creative.hypothesis}
@@ -116,6 +140,39 @@ export default function AdCard({
           )}
           {ad.editedVideoUrl && (
             <span className="pill pill-green">edited</span>
+          )}
+          {ad.status === "draft" && onRegenerate && (
+            <button
+              className="btn btn-ghost text-xs"
+              onClick={async () => {
+                setRegenerating(true);
+                try { await onRegenerate(); } finally { setRegenerating(false); }
+              }}
+              disabled={regenerating}
+            >
+              {regenerating ? "Regenerating…" : hasVideo ? "Regenerate image" : "Regenerate"}
+            </button>
+          )}
+          {hasVideo && ad.status === "draft" && (
+            <button
+              className="btn btn-ghost text-xs"
+              onClick={handleRegenerateVideo}
+              disabled={regeneratingVideo}
+            >
+              {regeneratingVideo ? "Regenerating video…" : "Regenerate video"}
+            </button>
+          )}
+          {ad.status === "draft" && onDelete && (
+            <button
+              className="btn btn-ghost text-xs text-red-600 hover:text-red-700"
+              onClick={async () => {
+                setDeleting(true);
+                try { await onDelete(); } finally { setDeleting(false); }
+              }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
           )}
         </div>
         {error && <div className="pill pill-red text-xs">{error}</div>}

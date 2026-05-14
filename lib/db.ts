@@ -49,6 +49,14 @@ export async function appendOptimization(
   return backend.appendOptimization(clientId, log);
 }
 
+export async function removeAd(clientId: string, adId: string): Promise<void> {
+  return backend.removeAd(clientId, adId);
+}
+
+export async function deleteClient(clientId: string): Promise<void> {
+  return backend.deleteClient(clientId);
+}
+
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }

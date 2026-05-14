@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       createdAt: new Date().toISOString(),
       status: "draft",
       platform: "google",
-      mediaKind: "image", // unused for RSA but required field
+      mediaKind: "text", // RSAs are text-only; image/video boxes don't apply
       googleRsa: rsa,
       // Mirror the angle / hypothesis onto the generic creative for chat &
       // optimization to read uniformly across platforms.

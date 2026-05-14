@@ -143,3 +143,13 @@ export async function appendOptimization(
     [log.id, clientId, log.at, log],
   );
 }
+
+export async function removeAd(clientId: string, adId: string): Promise<void> {
+  const p = await pool();
+  await p.query("DELETE FROM ads WHERE id = $1 AND client_id = $2", [adId, clientId]);
+}
+
+export async function deleteClient(clientId: string): Promise<void> {
+  const p = await pool();
+  await p.query("DELETE FROM clients WHERE id = $1", [clientId]);
+}

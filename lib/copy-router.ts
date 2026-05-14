@@ -38,11 +38,11 @@ export function pickModel(task: CopyTask): CopyModelChoice {
   switch (task) {
     case "strategy":
     case "creative_battery":
-      return { model: "claude-opus-4-7", effort: "high" };
+      return { model: "claude-opus-4-20250514", effort: "high" };
     case "chat":
     case "single_rewrite":
-      return { model: "claude-sonnet-4-6", effort: "medium" };
+      return { model: "claude-sonnet-4-20250514", effort: "medium" };
     case "util":
-      return { model: "claude-haiku-4-5", effort: "low" };
+      return { model: "claude-haiku-4-5-20251001", effort: "low" };
   }
 }

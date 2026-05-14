@@ -13,6 +13,7 @@ import type {
   Report,
 } from "@/lib/types";
 import AdCard from "@/components/AdCard";
+import GoogleAdCard from "@/components/GoogleAdCard";
 import ChatPanel from "@/components/ChatPanel";
 import ReportBlock from "@/components/ReportBlock";
 
@@ -39,6 +40,36 @@ export default function ClientWorkspace({
     if (res.ok) {
       const { client: fresh } = await res.json();
       setClient(fresh);
+    }
+  }
+
+  async function handleDelete(adId: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/ads/${adId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Delete failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function handleRegenerate(adId: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/ads/${adId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Regenerate failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -186,6 +217,22 @@ export default function ClientWorkspace({
       });
       if (!res.ok)
         throw new Error((await res.json()).error || "Schedule failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function runCancelPost(postId: string) {
+    setError(null);
+    try {
+      const res = await fetch("/api/cancel-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, postId }),
+      });
+      if (!res.ok)
+        throw new Error((await res.json()).error || "Cancel failed.");
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -362,7 +409,7 @@ export default function ClientWorkspace({
                     </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       {draftMeta.map((ad) => (
-                        <AdCard key={ad.id} ad={ad} />
+                        <AdCard key={ad.id} ad={ad} onDelete={() => handleDelete(ad.id)} onRegenerate={() => handleRegenerate(ad.id)} />
                       ))}
                     </div>
                   </>
@@ -374,7 +421,7 @@ export default function ClientWorkspace({
                     </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       {draftGoogle.map((ad) => (
-                        <AdCard key={ad.id} ad={ad} />
+                        <GoogleAdCard key={ad.id} ad={ad} onDelete={() => handleDelete(ad.id)} onRegenerate={() => handleRegenerate(ad.id)} />
                       ))}
                     </div>
                   </>
@@ -422,9 +469,13 @@ export default function ClientWorkspace({
           children={
             launchedAds.length > 0 ? (
               <div className="grid md:grid-cols-2 gap-3">
-                {launchedAds.map((ad) => (
-                  <AdCard key={ad.id} ad={ad} launched />
-                ))}
+                {launchedAds.map((ad) =>
+                  ad.platform === "google" ? (
+                    <GoogleAdCard key={ad.id} ad={ad} launched />
+                  ) : (
+                    <AdCard key={ad.id} ad={ad} launched />
+                  )
+                )}
               </div>
             ) : (
               <p className="text-[color:var(--muted)]">
@@ -513,6 +564,7 @@ export default function ClientWorkspace({
           disabled={!client.analysis}
           onGenerate={runGenerateOrganic}
           onSchedule={runSchedulePost}
+          onCancel={runCancelPost}
         />
 
         <ReportsSection
@@ -633,21 +685,21 @@ function GamePlanSection({
             onClick={() => onGenerate("meta")}
             disabled={busy || disabled}
           >
-            Meta plan
+            {busy ? "Cooking…" : "Meta plan"}
           </button>
           <button
             className="btn btn-ghost text-xs"
             onClick={() => onGenerate("google")}
             disabled={busy || disabled}
           >
-            Google plan
+            {busy ? "Cooking…" : "Google plan"}
           </button>
           <button
             className="btn btn-ghost text-xs"
             onClick={() => onGenerate("organic")}
             disabled={busy || disabled}
           >
-            Organic plan
+            {busy ? "Cooking…" : "Organic plan"}
           </button>
         </div>
       </div>
@@ -715,12 +767,14 @@ function OrganicSection({
   disabled,
   onGenerate,
   onSchedule,
+  onCancel,
 }: {
   posts: OrganicPost[];
   busy: boolean;
   disabled: boolean;
   onGenerate: (platforms: OrganicPlatform[]) => void;
-  onSchedule: (postId: string) => void;
+  onSchedule: (postId: string) => Promise<void> | void;
+  onCancel: (postId: string) => Promise<void> | void;
 }) {
   const PLATFORMS: OrganicPlatform[] = [
     "instagram",
@@ -734,9 +788,25 @@ function OrganicSection({
     "instagram",
     "linkedin",
   ]);
+  const [schedulingIds, setSchedulingIds] = useState<Set<string>>(new Set());
+  const [cancelingIds, setCancelingIds] = useState<Set<string>>(new Set());
   const togglePlat = (p: OrganicPlatform) => {
     setPicked((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
   };
+
+  async function handleSchedule(postId: string) {
+    setSchedulingIds((s) => new Set(s).add(postId));
+    try { await onSchedule(postId); } finally {
+      setSchedulingIds((s) => { const n = new Set(s); n.delete(postId); return n; });
+    }
+  }
+
+  async function handleCancel(postId: string) {
+    setCancelingIds((s) => new Set(s).add(postId));
+    try { await onCancel(postId); } finally {
+      setCancelingIds((s) => { const n = new Set(s); n.delete(postId); return n; });
+    }
+  }
 
   return (
     <section className="card p-5">
@@ -830,9 +900,19 @@ function OrganicSection({
                 {p.status === "draft" && (
                   <button
                     className="btn btn-ghost text-xs"
-                    onClick={() => onSchedule(p.id)}
+                    onClick={() => handleSchedule(p.id)}
+                    disabled={schedulingIds.has(p.id)}
                   >
-                    Schedule
+                    {schedulingIds.has(p.id) ? "Scheduling…" : "Schedule"}
+                  </button>
+                )}
+                {p.status === "scheduled" && (
+                  <button
+                    className="btn btn-ghost text-xs text-red-600"
+                    onClick={() => handleCancel(p.id)}
+                    disabled={cancelingIds.has(p.id)}
+                  >
+                    {cancelingIds.has(p.id) ? "Canceling…" : "Cancel"}
                   </button>
                 )}
               </div>
@@ -870,14 +950,14 @@ function ReportsSection({
             onClick={() => onGenerate("client")}
             disabled={busy}
           >
-            Client report
+            {busy ? "Cooking…" : "Client report"}
           </button>
           <button
             className="btn btn-ghost text-xs"
             onClick={() => onGenerate("pm")}
             disabled={busy}
           >
-            PM brief
+            {busy ? "Cooking…" : "PM brief"}
           </button>
         </div>
       </div>

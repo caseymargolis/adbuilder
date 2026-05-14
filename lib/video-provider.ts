@@ -44,19 +44,35 @@ export interface GeneratedVideo {
   mock: boolean;
 }
 
-/** Write a one-shot video prompt from the ad angle + hypothesis + brand voice. */
+/** Write a one-shot video prompt from the ad angle + hypothesis + brand context. */
 export async function writeVideoPrompt(args: {
   angle: string;
   hypothesis: string;
   brandVoice: string;
   offer: string;
   imagePrompt?: string;
+  productName?: string;
+  audienceGuess?: string;
+  proofPoints?: string[];
+  differentiators?: string[];
+  brandColors?: string[];
 }): Promise<{ videoPrompt: string }> {
   const user = [
     `ANGLE: ${args.angle}`,
     `HYPOTHESIS: ${args.hypothesis}`,
     `OFFER: ${args.offer}`,
     `BRAND VOICE: ${args.brandVoice}`,
+    args.productName ? `PRODUCT: ${args.productName}` : "",
+    args.audienceGuess ? `AUDIENCE: ${args.audienceGuess}` : "",
+    args.proofPoints?.length
+      ? `PROOF POINTS: ${args.proofPoints.slice(0, 3).join(" | ")}`
+      : "",
+    args.differentiators?.length
+      ? `DIFFERENTIATORS: ${args.differentiators.slice(0, 3).join(" | ")}`
+      : "",
+    args.brandColors?.length
+      ? `BRAND COLORS: ${args.brandColors.join(", ")}`
+      : "",
     args.imagePrompt ? `PAIRED STATIC CONCEPT: ${args.imagePrompt}` : "",
     "",
     "Write the video prompt.",
@@ -74,12 +90,14 @@ export async function writeVideoPrompt(args: {
 export async function routeVideo(args: {
   videoPrompt: string;
   angle: string;
+  hypothesis: string;
   brandVoice: string;
   aspectHint?: "1:1" | "4:5" | "9:16" | "16:9";
 }): Promise<VideoRouteDecision> {
   const user = [
     "BRIEF:",
     `- Angle: ${args.angle}`,
+    `- Hypothesis: ${args.hypothesis}`,
     `- Brand voice: ${args.brandVoice}`,
     args.aspectHint ? `- Placement hint: ${args.aspectHint}` : "",
     `- Prompt: ${args.videoPrompt}`,
@@ -134,9 +152,9 @@ async function callVeo(decision: VideoRouteDecision): Promise<GeneratedVideo> {
         body: JSON.stringify({
           instances: [{ prompt: decision.refinedPrompt }],
           parameters: {
-            aspectRatio: decision.recommendedAspect.replace(":", ":"),
-            durationSeconds: decision.recommendedDurationSec,
-            generateAudio: true,
+            aspectRatio: decision.recommendedAspect,
+            // veo-3.0-generate-001 accepts 4-8s; clamp router value
+            durationSeconds: Math.min(8, Math.max(4, decision.recommendedDurationSec)),
           },
         }),
       },
@@ -190,7 +208,8 @@ async function callSora(decision: VideoRouteDecision): Promise<GeneratedVideo> {
               : decision.recommendedAspect === "4:5"
                 ? "864x1080"
                 : "1280x720",
-        seconds: decision.recommendedDurationSec,
+        // Sora only accepts string values "4", "8", or "12"
+        seconds: decision.recommendedDurationSec <= 4 ? "4" : decision.recommendedDurationSec <= 8 ? "8" : "12",
       }),
     });
     if (!start.ok) return placeholder(decision);
@@ -236,7 +255,7 @@ async function callRunway(decision: VideoRouteDecision): Promise<GeneratedVideo>
         "X-Runway-Version": "2024-11-06",
       },
       body: JSON.stringify({
-        model: "gen4_turbo",
+        model: "gen4.5",
         promptText: decision.refinedPrompt,
         ratio:
           decision.recommendedAspect === "9:16"

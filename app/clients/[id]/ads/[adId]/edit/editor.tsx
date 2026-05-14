@@ -93,7 +93,7 @@ export default function VideoEditor({
       }
       // CTA button
       if (state.showCtaButton) {
-        drawCta(ctx, ad.creative.cta, canvas.width, canvas.height);
+        drawCta(ctx, ad.creative.cta ?? "LEARN_MORE", canvas.width, canvas.height);
       }
       raf = requestAnimationFrame(draw);
     }
@@ -448,7 +448,7 @@ export default function VideoEditor({
                   setState((s) => ({ ...s, showCtaButton: e.target.checked }))
                 }
               />
-              Render CTA button — <b>{ad.creative.cta.replace("_", " ")}</b>
+              Render CTA button — <b>{(ad.creative.cta ?? "LEARN_MORE").replace("_", " ")}</b>
             </label>
             <p className="text-xs text-[color:var(--muted)]">
               The CTA on the Meta ad object is the one that actually converts.

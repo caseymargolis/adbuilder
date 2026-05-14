@@ -233,7 +233,7 @@ export interface AdCreative {
   hypothesis: string; // what we're testing and why
 }
 
-export type AdMediaKind = "image" | "video";
+export type AdMediaKind = "image" | "video" | "text"; // "text" for Google RSAs
 
 export interface TextOverlay {
   id: string;

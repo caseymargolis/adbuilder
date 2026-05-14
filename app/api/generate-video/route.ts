@@ -30,20 +30,27 @@ export async function POST(req: Request) {
     );
   }
 
+  const a = client.analysis;
+
   // 1. Write a video prompt that fits the ad's angle + hypothesis
   const { videoPrompt } = await writeVideoPrompt({
     angle: ad.creative.angle,
     hypothesis: ad.creative.hypothesis,
-    brandVoice: client.analysis.voice,
+    brandVoice: a.voice,
     offer: client.offer,
     imagePrompt: ad.creative.imagePrompt,
+    audienceGuess: a.audienceGuess,
+    proofPoints: a.proofPoints,
+    differentiators: a.differentiators,
+    brandColors: a.brandColors,
   });
 
   // 2. Route to the best provider
   const decision = await routeVideo({
     videoPrompt,
     angle: ad.creative.angle,
-    brandVoice: client.analysis.voice,
+    hypothesis: ad.creative.hypothesis,
+    brandVoice: a.voice,
     aspectHint,
   });
 
