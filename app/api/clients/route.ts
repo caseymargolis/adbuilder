@@ -30,23 +30,31 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const parsed = CreateSchema.safeParse(body);
-  if (!parsed.success) {
+  try {
+    const body = await req.json();
+    const parsed = CreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+    const { notifyEmail, ...rest } = parsed.data;
+    const client: ClientRecord = {
+      id: newId("c"),
+      createdAt: new Date().toISOString(),
+      ads: [],
+      optimizations: [],
+      notifyEmail: notifyEmail || undefined,
+      ...rest,
+    };
+    await upsertClient(client);
+    return NextResponse.json({ client }, { status: 201 });
+  } catch (e) {
+    console.error("Failed to create client:", e);
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten() },
-      { status: 400 },
+      { error: "Failed to create client. Database not configured." },
+      { status: 500 },
     );
   }
-  const { notifyEmail, ...rest } = parsed.data;
-  const client: ClientRecord = {
-    id: newId("c"),
-    createdAt: new Date().toISOString(),
-    ads: [],
-    optimizations: [],
-    notifyEmail: notifyEmail || undefined,
-    ...rest,
-  };
-  await upsertClient(client);
-  return NextResponse.json({ client }, { status: 201 });
 }
