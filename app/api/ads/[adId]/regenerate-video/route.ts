@@ -61,7 +61,7 @@ export async function POST(
     angle: ad.creative.angle,
     hypothesis: ad.creative.hypothesis,
     brandVoice: a.voice,
-    aspectHint: aspectRatio as "1:1" | "4:5" | "9:16" | "16:9",
+    aspectHint: aspectRatio as "1:1" | "9:16" | "16:9",
   });
   console.log("✅ Selected provider:", decision.provider, "Reason:", decision.reason, "Aspect:", decision.recommendedAspect);
 
