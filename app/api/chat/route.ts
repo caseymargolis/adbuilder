@@ -27,7 +27,23 @@ export async function POST(req: Request) {
 
   const agent = AGENTS[agentId];
   const context = buildContext({ client, agent: agentId, audience, scope });
-  const system = `${withPersona(agentId, CHAT_SYSTEM)}\n\n---\nCONTEXT (for ${agent.name}):\n${context}`;
+  const audienceStyle =
+    audience === "client"
+      ? [
+          "You are writing TO THE CLIENT (business owner).",
+          "Hard rules:",
+          "- 2–4 sentences total. Plain English only. No acronyms (define once if unavoidable).",
+          "- Outcome-first: leads, sales, dollars; avoid CTR/CPC jargon.",
+          "- No bullet lists. One short paragraph max.",
+        ].join("\n")
+      : [
+          "You are writing TO THE PM (ops brief).",
+          "Hard rules:",
+          "- Dense and specific. Include the key NUMBERS (spend, CTR, CPC/CPA, conversions, frequency when applicable).",
+          "- Use bullet points. 3–6 bullets max, each action-oriented.",
+          "- Acronyms (CTR/CPC/CPA) are OK; skip definitions.",
+        ].join("\n");
+  const system = `${withPersona(agentId, CHAT_SYSTEM)}\n\n---\nSTYLE FOR ${audience.toUpperCase()}\n${audienceStyle}\n\n---\nCONTEXT (for ${agent.name}):\n${context}`;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

@@ -58,7 +58,10 @@ export async function routeImage(args: {
     `- Angle: ${args.angle}`,
     `- Brand voice: ${args.brandVoice}`,
     args.brandColors && args.brandColors.length
-      ? `- Canonical brand colors: ${args.brandColors.join(", ")}`
+      ? `- Canonical brand colors: ${args.brandColors
+          .map((color) => describeColor(color))
+          .filter(Boolean)
+          .join(", ")}`
       : "",
     args.brandFonts && args.brandFonts.length
       ? `- Canonical brand fonts: ${args.brandFonts.join(", ")}`
@@ -99,6 +102,60 @@ export async function routeImage(args: {
     task: "util",
     maxTokens: 1200,
   });
+}
+
+function describeColor(hex: string): string | null {
+  try {
+    const normalized = hex.trim().replace(/^#/, "");
+    const value = parseInt(
+      normalized.length === 3
+        ? normalized
+            .split("")
+            .map((c) => c + c)
+            .join("")
+        : normalized,
+      16,
+    );
+    const r = ((value >> 16) & 0xff) / 255;
+    const g = ((value >> 8) & 0xff) / 255;
+    const b = (value & 0xff) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+    const l = (max + min) / 2;
+    let h = 0;
+    if (delta !== 0) {
+      if (max === r) h = ((g - b) / delta) % 6;
+      else if (max === g) h = (b - r) / delta + 2;
+      else h = (r - g) / delta + 4;
+    }
+    h = (h * 60 + 360) % 360;
+    const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
+
+    const hueNames: Array<[number, number, string]> = [
+      [330, 30, "rose"],
+      [30, 60, "orange"],
+      [60, 90, "amber"],
+      [90, 150, "chartreuse"],
+      [150, 210, "teal"],
+      [210, 270, "blue"],
+      [270, 330, "violet"],
+    ];
+    const hueName = hueNames.find(([start, end]) => {
+      if (start < end) return h >= start && h < end;
+      return h >= start || h < end;
+    })?.[2] ?? "neutral";
+
+    const modifiers = [];
+    if (l < 0.2) modifiers.push("deep");
+    else if (l > 0.8) modifiers.push("pale");
+    else if (s < 0.2) modifiers.push("muted");
+    if (modifiers.length === 0) modifiers.push("vivid");
+
+    return `${modifiers.join(" ")} ${hueName}`.trim();
+  } catch {
+    return null;
+  }
 }
 
 /**

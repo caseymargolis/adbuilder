@@ -27,6 +27,84 @@ interface GeneratedPost {
   suggestedHourLocal: number;
 }
 
+async function generateSinglePost(args: {
+  client: ClientRecord;
+  platform: OrganicPlatform;
+  withImages: boolean;
+}): Promise<GeneratedPost> {
+  const { client, platform } = args;
+  if (!client.analysis) {
+    throw new Error("Run the analysis first.");
+  }
+  const a = client.analysis;
+  const user = [
+    "CLIENT",
+    `- Name: ${client.name}`,
+    `- Offer: ${client.offer}`,
+    `- Brand voice: ${a.voice}`,
+    `- Audience: ${a.audienceGuess}`,
+    `- Differentiators: ${a.differentiators.join("; ")}`,
+    `- Customer language to lean on (from reviews/Reddit): ${a.proofPoints.join("; ")}`,
+    "",
+    `PLATFORM: ${platform}`,
+    "",
+    "Generate 1 post for this platform. Pick a fresh angle.",
+  ].join("\n");
+
+  const drafts = await askJson<GeneratedPost[]>({
+    system: ORGANIC_CONTENT_SYSTEM,
+    user,
+    task: "creative_battery",
+    maxTokens: 4000,
+  });
+
+  return drafts[0];
+}
+
+async function enrichPostWithImage(args: {
+  draft: GeneratedPost;
+  client: ClientRecord;
+  withImages: boolean;
+}): Promise<OrganicPost> {
+  const { draft, client, withImages } = args;
+  const a = client.analysis!;
+
+  let mediaUrl: string | undefined;
+  let mediaProvider: string | undefined;
+  if (withImages && draft.mediaPrompt) {
+    try {
+      const decision = await routeImage({
+        imagePrompt: draft.mediaPrompt,
+        angle: draft.angle,
+        brandVoice: a.voice,
+        brandColors: a.brandColors,
+        brandFonts: a.brandFonts,
+      });
+      const img = await generateImage({ decision });
+      mediaUrl = img.url;
+      mediaProvider = img.provider;
+    } catch {
+      /* leave mediaUrl undefined; UI shows the prompt and the user can re-render */
+    }
+  }
+
+  return {
+    id: newId("p"),
+    clientId: client.id,
+    createdAt: new Date().toISOString(),
+    platform: draft.platform,
+    caption: draft.caption,
+    hashtags: draft.hashtags ?? [],
+    mediaPrompt: draft.mediaPrompt ?? undefined,
+    mediaUrl,
+    mediaProvider,
+    scheduledAt: nextSlotForDayHour(draft.suggestedDay, draft.suggestedHourLocal),
+    status: "draft",
+    angle: draft.angle,
+    hypothesis: draft.hypothesis,
+  };
+}
+
 export async function generateOrganicCalendar(args: {
   client: ClientRecord;
   platforms: OrganicPlatform[];
@@ -63,41 +141,35 @@ export async function generateOrganicCalendar(args: {
   // generation hiccups.
   const enriched = await Promise.all(
     drafts.map(async (d): Promise<OrganicPost> => {
-      let mediaUrl: string | undefined;
-      let mediaProvider: string | undefined;
-      if (withImages && d.mediaPrompt) {
-        try {
-          const decision = await routeImage({
-            imagePrompt: d.mediaPrompt,
-            angle: d.angle,
-            brandVoice: a.voice,
-            brandColors: a.brandColors,
-            brandFonts: a.brandFonts,
-          });
-          const img = await generateImage({ decision });
-          mediaUrl = img.url;
-          mediaProvider = img.provider;
-        } catch {
-          /* leave mediaUrl undefined; UI shows the prompt and the user can re-render */
-        }
-      }
-      return {
-        id: newId("p"),
-        clientId: client.id,
-        createdAt: new Date().toISOString(),
-        platform: d.platform,
-        caption: d.caption,
-        hashtags: d.hashtags ?? [],
-        mediaPrompt: d.mediaPrompt ?? undefined,
-        mediaUrl,
-        mediaProvider,
-        scheduledAt: nextSlotForDayHour(d.suggestedDay, d.suggestedHourLocal),
-        status: "draft",
-        angle: d.angle,
-        hypothesis: d.hypothesis,
-      };
+      return enrichPostWithImage({ draft: d, client, withImages });
     }),
   );
+  return enriched;
+}
+
+/** Regenerate a single post (caption, hashtags, image, angle, hypothesis) for the same platform. */
+export async function regeneratePost(args: {
+  client: ClientRecord;
+  existingPost: OrganicPost;
+  withImages: boolean;
+}): Promise<OrganicPost> {
+  const { client, existingPost, withImages } = args;
+
+  const draft = await generateSinglePost({
+    client,
+    platform: existingPost.platform,
+    withImages,
+  });
+
+  const enriched = await enrichPostWithImage({
+    draft,
+    client,
+    withImages,
+  });
+
+  // Preserve the original scheduledAt and timing
+  enriched.scheduledAt = existingPost.scheduledAt;
+
   return enriched;
 }
 

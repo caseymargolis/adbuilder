@@ -45,9 +45,15 @@ export async function POST(req: Request) {
   });
 
   // Refresh metrics for all launched ads, by platform.
-  const liveAds = client.ads.filter((a) =>
-    ["live", "queued", "winner", "paused"].includes(a.status),
-  );
+  // Only optimize ads that are actually live (not queued/paused mock ads).
+  const liveAds = client.ads.filter((a) => {
+    if (a.status !== "live" && a.status !== "winner") return false;
+    // Skip mock ads - they have fake metrics from getAdMetrics mock mode
+    if ((a.platform ?? "meta") === "google") {
+      return a.googleAdResource && !a.googleAdResource.startsWith("mock_");
+    }
+    return a.metaAdId && !a.metaAdId.startsWith("mock_");
+  });
   const metricsRefreshed = await Promise.all(
     liveAds.map(async (ad) => {
       try {
@@ -81,7 +87,7 @@ export async function POST(req: Request) {
 
   if (metricsRefreshed.length === 0) {
     return NextResponse.json({
-      error: "No live ads to optimize. Launch at least one first.",
+      error: "No live ads to optimize. Launch ads to Meta/Google, then flip them to ACTIVE in the respective ad manager before running optimization.",
     }, { status: 400 });
   }
 

@@ -12,6 +12,7 @@ import type {
   OrganicPost,
   Report,
 } from "@/lib/types";
+import { getLiveAds, hasLiveAds } from "@/lib/ad-utils";
 import AdCard from "@/components/AdCard";
 import GoogleAdCard from "@/components/GoogleAdCard";
 import ChatPanel from "@/components/ChatPanel";
@@ -131,6 +132,16 @@ export default function ClientWorkspace({
     }
   }
 
+  function updateOrganicPost(updated: OrganicPost) {
+    setClient((prev) => {
+      if (!prev) return prev;
+      const updatedPosts = (prev.organicPosts ?? []).map((p) =>
+        p.id === updated.id ? updated : p,
+      );
+      return { ...prev, organicPosts: updatedPosts };
+    });
+  }
+
   async function runLaunch(adIds: string[], platform: "meta" | "google" = "meta") {
     setBusy("launch");
     setError(null);
@@ -161,6 +172,24 @@ export default function ClientWorkspace({
         body: JSON.stringify({ clientId: client.id, apply }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Optimize failed.");
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runSyncAdStatus() {
+    setBusy("optimize");
+    setError(null);
+    try {
+      const res = await fetch("/api/sync-ad-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Sync failed.");
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -242,6 +271,11 @@ export default function ClientWorkspace({
   async function runGenerateReport(audience: "client" | "pm") {
     setBusy("report");
     setError(null);
+    if (!hasLive) {
+      setError("Reports need a live ad before they can be generated.");
+      setBusy(null);
+      return;
+    }
     try {
       const res = await fetch("/api/generate-report", {
         method: "POST",
@@ -274,6 +308,8 @@ export default function ClientWorkspace({
     () => client.ads.filter((a) => a.status !== "draft" && a.status !== "killed"),
     [client.ads],
   );
+  const liveAds = useMemo(() => getLiveAds(client), [client.ads]);
+  const hasLive = useMemo(() => hasLiveAds(client), [client.ads]);
 
   return (
     <div className="grid lg:grid-cols-[1fr_380px] gap-8">
@@ -518,8 +554,8 @@ export default function ClientWorkspace({
           step={4}
           title="Daily review & optimize"
           done={client.optimizations.length > 0}
-          disabled={launchedAds.length === 0}
-          disabledHint="Launch ads first. No ads, nothing to review."
+          disabled={liveAds.length === 0}
+          disabledHint="Launch ads to Meta/Google, then flip them to ACTIVE in the respective ad manager before running optimization."
           children={
             client.optimizations.length > 0 ? (
               <OptimizationHistory logs={client.optimizations.slice(0, 3)} />
@@ -532,21 +568,32 @@ export default function ClientWorkspace({
             )
           }
           action={
-            <div className="flex gap-2">
-              <button
-                className="btn btn-ghost"
-                onClick={() => runOptimize(false)}
-                disabled={busy === "optimize" || launchedAds.length === 0}
-              >
-                {busy === "optimize" ? "Reviewing…" : "Review only"}
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => runOptimize(true)}
-                disabled={busy === "optimize" || launchedAds.length === 0}
-              >
-                Review & apply
-              </button>
+            <div className="flex flex-col items-end gap-2">
+              {launchedAds.length > 0 && liveAds.length === 0 && (
+                <button
+                  className="btn btn-ghost text-xs"
+                  onClick={runSyncAdStatus}
+                  disabled={busy === "optimize"}
+                >
+                  {busy === "optimize" ? "Syncing…" : "Sync status from platforms"}
+                </button>
+              )}
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => runOptimize(false)}
+                  disabled={busy === "optimize" || liveAds.length === 0}
+                >
+                  {busy === "optimize" ? "Reviewing…" : "Review only"}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => runOptimize(true)}
+                  disabled={busy === "optimize" || liveAds.length === 0}
+                >
+                  Review & apply
+                </button>
+              </div>
             </div>
           }
         />
@@ -565,12 +612,15 @@ export default function ClientWorkspace({
           onGenerate={runGenerateOrganic}
           onSchedule={runSchedulePost}
           onCancel={runCancelPost}
+          clientId={client.id}
+          onUpdatePost={updateOrganicPost}
         />
 
         <ReportsSection
           reports={client.reports ?? []}
           busy={busy === "report"}
           onGenerate={runGenerateReport}
+          hasLive={hasLive}
         />
       </div>
 
@@ -768,6 +818,8 @@ function OrganicSection({
   onGenerate,
   onSchedule,
   onCancel,
+  onUpdatePost,
+  clientId,
 }: {
   posts: OrganicPost[];
   busy: boolean;
@@ -775,6 +827,8 @@ function OrganicSection({
   onGenerate: (platforms: OrganicPlatform[]) => void;
   onSchedule: (postId: string) => Promise<void> | void;
   onCancel: (postId: string) => Promise<void> | void;
+  onUpdatePost: (post: OrganicPost) => void;
+  clientId: string;
 }) {
   const PLATFORMS: OrganicPlatform[] = [
     "instagram",
@@ -790,6 +844,8 @@ function OrganicSection({
   ]);
   const [schedulingIds, setSchedulingIds] = useState<Set<string>>(new Set());
   const [cancelingIds, setCancelingIds] = useState<Set<string>>(new Set());
+  const [regeneratingImageIds, setRegeneratingImageIds] = useState<Set<string>>(new Set());
+  const [regeneratingPostIds, setRegeneratingPostIds] = useState<Set<string>>(new Set());
   const togglePlat = (p: OrganicPlatform) => {
     setPicked((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
   };
@@ -805,6 +861,42 @@ function OrganicSection({
     setCancelingIds((s) => new Set(s).add(postId));
     try { await onCancel(postId); } finally {
       setCancelingIds((s) => { const n = new Set(s); n.delete(postId); return n; });
+    }
+  }
+
+  async function handleRegenerateImage(postId: string) {
+    setRegeneratingImageIds((s) => new Set(s).add(postId));
+    try {
+      const res = await fetch(`/api/organic/${postId}/regenerate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.error || "Regenerate image failed.");
+      onUpdatePost(payload.post);
+    } catch (e) {
+      console.error((e as Error).message);
+    } finally {
+      setRegeneratingImageIds((s) => { const n = new Set(s); n.delete(postId); return n; });
+    }
+  }
+
+  async function handleRegeneratePost(postId: string) {
+    setRegeneratingPostIds((s) => new Set(s).add(postId));
+    try {
+      const res = await fetch(`/api/organic/${postId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.error || "Regenerate post failed.");
+      onUpdatePost(payload.post);
+    } catch (e) {
+      console.error((e as Error).message);
+    } finally {
+      setRegeneratingPostIds((s) => { const n = new Set(s); n.delete(postId); return n; });
     }
   }
 
@@ -891,30 +983,50 @@ function OrganicSection({
               <div className="text-[11px] text-[color:var(--muted)] mt-2 italic">
                 Why: {p.hypothesis}
               </div>
-              <div className="flex justify-between items-center mt-2 pt-2 border-t border-[color:var(--line)]">
-                <span className="text-[11px] text-[color:var(--muted)]">
+              <div className="mt-2 pt-2 border-t border-[color:var(--line)]">
+                <div className="text-[11px] text-[color:var(--muted)] mb-2">
                   {p.scheduledAt
                     ? new Date(p.scheduledAt).toLocaleString()
                     : "no time set"}
-                </span>
-                {p.status === "draft" && (
-                  <button
-                    className="btn btn-ghost text-xs"
-                    onClick={() => handleSchedule(p.id)}
-                    disabled={schedulingIds.has(p.id)}
-                  >
-                    {schedulingIds.has(p.id) ? "Scheduling…" : "Schedule"}
-                  </button>
-                )}
-                {p.status === "scheduled" && (
-                  <button
-                    className="btn btn-ghost text-xs text-red-600"
-                    onClick={() => handleCancel(p.id)}
-                    disabled={cancelingIds.has(p.id)}
-                  >
-                    {cancelingIds.has(p.id) ? "Canceling…" : "Cancel"}
-                  </button>
-                )}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {p.status === "draft" && (
+                    <>
+                      {p.mediaUrl && (
+                        <button
+                          className="btn btn-ghost text-xs"
+                          onClick={() => handleRegenerateImage(p.id)}
+                          disabled={regeneratingImageIds.has(p.id)}
+                        >
+                          {regeneratingImageIds.has(p.id) ? "Regenerating…" : "Regen image"}
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-ghost text-xs"
+                        onClick={() => handleRegeneratePost(p.id)}
+                        disabled={regeneratingPostIds.has(p.id)}
+                      >
+                        {regeneratingPostIds.has(p.id) ? "Regenerating…" : "Regen post"}
+                      </button>
+                      <button
+                        className="btn btn-ghost text-xs"
+                        onClick={() => handleSchedule(p.id)}
+                        disabled={schedulingIds.has(p.id)}
+                      >
+                        {schedulingIds.has(p.id) ? "Scheduling…" : "Schedule"}
+                      </button>
+                    </>
+                  )}
+                  {p.status === "scheduled" && (
+                    <button
+                      className="btn btn-ghost text-xs text-red-600"
+                      onClick={() => handleCancel(p.id)}
+                      disabled={cancelingIds.has(p.id)}
+                    >
+                      {cancelingIds.has(p.id) ? "Canceling…" : "Cancel"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -928,13 +1040,15 @@ function ReportsSection({
   reports,
   busy,
   onGenerate,
+  hasLive,
 }: {
   reports: Report[];
   busy: boolean;
   onGenerate: (audience: "client" | "pm") => void;
+  hasLive: boolean;
 }) {
   return (
-    <section className="card p-5">
+    <section className={`card p-5 ${!hasLive ? "opacity-70" : ""}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-widest text-[color:var(--muted)] font-semibold">
@@ -944,23 +1058,29 @@ function ReportsSection({
             Two registers, same voice
           </h2>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             className="btn btn-ghost text-xs"
             onClick={() => onGenerate("client")}
-            disabled={busy}
+            disabled={busy || !hasLive}
           >
             {busy ? "Cooking…" : "Client report"}
           </button>
           <button
             className="btn btn-ghost text-xs"
             onClick={() => onGenerate("pm")}
-            disabled={busy}
+            disabled={busy || !hasLive}
           >
             {busy ? "Cooking…" : "PM brief"}
           </button>
         </div>
       </div>
+      {!hasLive && (
+        <p className="text-xs text-[color:var(--muted)] mt-2 italic">
+          Reports require a live or winner ad with real platform IDs so the numbers
+          aren’t just mocks.
+        </p>
+      )}
       {reports.length === 0 ? (
         <p className="text-[color:var(--muted)] mt-3">
           Lex writes weekly client reports (jargon-free, outcome-first) and

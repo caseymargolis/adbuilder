@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { listClients, upsertClient } from "@/lib/db";
 import { send } from "@/lib/email";
 import { generateReport, renderReportEmail } from "@/lib/reports";
+import { hasLiveAds } from "@/lib/ad-utils";
 
 /**
  * Generates and emails reports.
@@ -49,6 +50,15 @@ export async function GET(req: Request) {
         name: client.name,
         sent: false,
         note: "skipped — no activity",
+      });
+      continue;
+    }
+    if (!hasLiveAds(client)) {
+      results.push({
+        clientId: client.id,
+        name: client.name,
+        sent: false,
+        note: "skipped — no live campaigns yet",
       });
       continue;
     }

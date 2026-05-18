@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClient, updateAd } from "@/lib/db";
 import { generateVideo, routeVideo, writeVideoPrompt } from "@/lib/video-provider";
+import { putBlob } from "@/lib/blob-storage";
 
 /**
  * Generate a video variant for an existing ad.
@@ -57,12 +58,28 @@ export async function POST(req: Request) {
   // 3. Generate (polls until done or placeholder on no-key)
   const video = await generateVideo({ decision });
 
-  // 4. Persist
+  // 4. Persist the video to blob storage so the URL doesn't expire
+  let videoUrl = video.url;
+  if (!video.mock && !videoUrl.startsWith("data:")) {
+    try {
+      const fetched = await fetch(videoUrl);
+      if (fetched.ok) {
+        const blob = await fetched.blob();
+        const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+        const result = await putBlob({ filename: `${ad.id}.${ext}`, blob });
+        videoUrl = result.url;
+      }
+    } catch (e) {
+      console.error("Failed to persist video to blob storage:", e);
+    }
+  }
+
+  // 5. Persist
   const updated = await updateAd(client.id, ad.id, (a) => ({
     ...a,
     mediaKind: "video",
     creative: { ...a.creative, videoPrompt: decision.refinedPrompt },
-    videoUrl: video.url,
+    videoUrl,
     videoProvider: video.provider,
     videoReason: decision.reason,
     videoDurationSec: video.durationSec,

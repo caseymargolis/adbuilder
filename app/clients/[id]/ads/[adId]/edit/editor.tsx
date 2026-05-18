@@ -24,7 +24,6 @@ import type { AdRecord, ClientRecord, EditorState, TextOverlay } from "@/lib/typ
 
 const ASPECTS: Array<{ id: EditorState["aspect"]; label: string; w: number; h: number }> = [
   { id: "1:1", label: "Square · 1:1", w: 1080, h: 1080 },
-  { id: "4:5", label: "Feed · 4:5", w: 1080, h: 1350 },
   { id: "9:16", label: "Story / Reels · 9:16", w: 1080, h: 1920 },
   { id: "16:9", label: "Landscape · 16:9", w: 1920, h: 1080 },
 ];
@@ -57,7 +56,7 @@ export default function VideoEditor({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(ad.videoDurationSec ?? 8);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [busy, setBusy] = useState<"exporting" | "saving" | null>(null);
+  const [busy, setBusy] = useState<"exporting" | "saving" | "regenerating" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const aspect = ASPECTS.find((a) => a.id === state.aspect) ?? ASPECTS[0];
@@ -69,8 +68,13 @@ export default function VideoEditor({
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (!canvas) return;
-      canvas.width = aspect.w;
-      canvas.height = aspect.h;
+      // Set canvas dimensions to match the actual display size to prevent compression
+      const rect = canvas.getBoundingClientRect();
+      // Only update dimensions if they've changed to avoid unnecessary redraws
+      if (canvas.width !== rect.width || canvas.height !== rect.height) {
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+      }
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
@@ -110,6 +114,19 @@ export default function VideoEditor({
     img.src = sourceUrl;
     placeholderImg.current = img;
   }, [sourceIsImage, sourceUrl]);
+
+  // Resize observer to update canvas dimensions when container size changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const resizeObserver = new ResizeObserver(() => {
+      // The draw loop will pick up the new dimensions
+    });
+    
+    resizeObserver.observe(canvas);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Track time + duration from the video element
   useEffect(() => {
@@ -214,6 +231,29 @@ export default function VideoEditor({
     }
   }
 
+  async function onRegenerateVideo() {
+    setBusy("regenerating");
+    try {
+      const res = await fetch(`/api/ads/${ad.id}/regenerate-video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: client.id,
+          aspectRatio: state.aspect,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Regeneration failed");
+      const data = await res.json();
+      setToast("Video regenerated successfully for the new aspect ratio!");
+      // Reload the page to show the new video
+      window.location.reload();
+    } catch (e) {
+      setToast(`Regeneration hit a snag: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <header className="flex items-center gap-3">
@@ -232,20 +272,23 @@ export default function VideoEditor({
         )}
       </header>
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-6">
+      <div className="grid lg:grid-cols-[1fr_380px] gap-6">
         {/* Preview */}
-        <div>
+        <div className="flex flex-col items-center justify-center">
           <div
-            className="mx-auto bg-black rounded-xl overflow-hidden shadow"
+            className="bg-black rounded-xl overflow-hidden shadow-lg border border-[color:var(--line)]"
             style={{
-              aspectRatio: `${aspect.w} / ${aspect.h}`,
-              maxHeight: "70vh",
-              maxWidth: aspect.id === "9:16" ? "28rem" : "100%",
+              width: "100%",
+              maxWidth: aspect.id === "9:16" ? "28rem" : aspect.id === "16:9" ? "100%" : "28rem",
             }}
           >
             <canvas
               ref={canvasRef}
-              className="w-full h-full block"
+              style={{
+                width: "100%",
+                aspectRatio: `${aspect.w} / ${aspect.h}`,
+                display: "block"
+              }}
             />
             {sourceUrl && !sourceIsImage && (
               // Hidden source video; we composite via canvas above.
@@ -260,12 +303,16 @@ export default function VideoEditor({
             )}
           </div>
 
-          <div className="mt-4 card p-4 space-y-3">
+          <div className="mt-4 card p-5 space-y-4 w-full max-w-2xl">
             <div className="flex items-center gap-3">
-              <button className="btn btn-ghost" onClick={togglePlay} disabled={sourceIsImage}>
-                {isPlaying ? "Pause" : "Play"}
+              <button 
+                className="btn btn-primary" 
+                onClick={togglePlay} 
+                disabled={sourceIsImage}
+              >
+                {isPlaying ? "⏸ Pause" : "▶ Play"}
               </button>
-              <div className="text-xs text-[color:var(--muted)] w-16 tabular-nums">
+              <div className="text-sm text-[color:var(--muted)] w-20 tabular-nums font-medium">
                 {currentTime.toFixed(1)}s / {duration.toFixed(1)}s
               </div>
               <input
@@ -278,15 +325,15 @@ export default function VideoEditor({
                   const v = videoRef.current;
                   if (v) v.currentTime = Number(e.target.value);
                 }}
-                className="flex-1"
+                className="flex-1 accent-[color:var(--terracotta)]"
                 disabled={sourceIsImage}
               />
             </div>
 
             <div>
-              <label className="label">Trim</label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs tabular-nums w-12">{state.trimStart.toFixed(1)}s</span>
+              <label className="label">Trim video</label>
+              <div className="flex items-center gap-3">
+                <span className="text-sm tabular-nums w-14 font-mono bg-[color:var(--bg)] px-2 py-1 rounded">{state.trimStart.toFixed(1)}s</span>
                 <RangeDouble
                   min={0}
                   max={duration}
@@ -296,11 +343,14 @@ export default function VideoEditor({
                     setState((s) => ({ ...s, trimStart: lo, trimEnd: hi }))
                   }
                 />
-                <span className="text-xs tabular-nums w-12">{state.trimEnd.toFixed(1)}s</span>
+                <span className="text-sm tabular-nums w-14 font-mono bg-[color:var(--bg)] px-2 py-1 rounded">{state.trimEnd.toFixed(1)}s</span>
               </div>
+              <p className="text-xs text-[color:var(--muted)] mt-1">
+                Drag the handles to set start and end points
+              </p>
             </div>
 
-            <div className="flex gap-3 items-center">
+            <div className="flex gap-3 items-center pt-2">
               <label className="label mb-0">Audio</label>
               <button
                 className={`btn ${state.mutedAudio ? "btn-danger" : "btn-ghost"}`}
@@ -308,7 +358,7 @@ export default function VideoEditor({
                   setState((s) => ({ ...s, mutedAudio: !s.mutedAudio }))
                 }
               >
-                {state.mutedAudio ? "Muted" : "Keep soundtrack"}
+                {state.mutedAudio ? "🔇 Muted" : "🔊 Keep soundtrack"}
               </button>
             </div>
           </div>
@@ -316,93 +366,114 @@ export default function VideoEditor({
 
         {/* Controls */}
         <aside className="space-y-4">
-          <div className="card p-4 space-y-3">
-            <label className="label">Aspect ratio / placement</label>
-            <select
-              className="select"
-              value={state.aspect}
-              onChange={(e) =>
-                setState((s) => ({ ...s, aspect: e.target.value as EditorState["aspect"] }))
-              }
-            >
+          <div className="card p-5 space-y-4">
+            <label className="label">Aspect ratio</label>
+            <div className="grid grid-cols-2 gap-2">
               {ASPECTS.map((a) => (
-                <option key={a.id} value={a.id}>
+                <button
+                  key={a.id}
+                  className={`btn text-sm ${state.aspect === a.id ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() =>
+                    setState((s) => ({ ...s, aspect: a.id as EditorState["aspect"] }))
+                  }
+                >
                   {a.label}
-                </option>
+                </button>
               ))}
-            </select>
-            <p className="text-xs text-[color:var(--muted)]">
-              9:16 for Reels & Stories. 4:5 for Feed. 1:1 for everything
-              else. We letterbox-fill, so crop is cover-style.
+            </div>
+            <p className="text-xs text-[color:var(--muted)] leading-relaxed">
+              <span className="font-semibold">9:16</span> for Reels & Stories · 
+              <span className="font-semibold">4:5</span> for Feed · 
+              <span className="font-semibold">1:1</span> for everything else
             </p>
           </div>
 
-          <div className="card p-4 space-y-3">
+          <div className="card p-5 space-y-4">
             <div className="flex items-center justify-between">
               <label className="label mb-0">Text overlays</label>
-              <button className="btn btn-ghost" onClick={addOverlay}>+ Add</button>
+              <button 
+                className="btn btn-primary text-sm" 
+                onClick={addOverlay}
+              >
+                + Add text
+              </button>
             </div>
             {state.overlays.length === 0 && (
-              <p className="text-xs text-[color:var(--muted)]">
-                No overlays. Add the headline here instead of baking it into
-                the video — the generator can't be trusted with text yet.
-              </p>
+              <div className="bg-[color:var(--bg)] rounded-lg p-4 text-center">
+                <p className="text-sm text-[color:var(--muted)]">
+                  No overlays yet. Add text overlays here instead of baking them into the video.
+                </p>
+              </div>
             )}
             {state.overlays.map((o) => (
               <div
                 key={o.id}
-                className="border border-[color:var(--line)] rounded-lg p-3 space-y-2"
+                className="border border-[color:var(--line)] rounded-lg p-4 space-y-3 bg-[#fffdf8]"
               >
                 <input
-                  className="input text-sm"
+                  className="input text-sm font-medium"
                   value={o.text}
                   onChange={(e) => updateOverlay(o.id, { text: e.target.value })}
+                  placeholder="Enter text..."
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  <select
-                    className="select text-xs"
-                    value={o.position}
-                    onChange={(e) =>
-                      updateOverlay(o.id, { position: e.target.value as TextOverlay["position"] })
-                    }
-                  >
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
-                  </select>
-                  <select
-                    className="select text-xs"
-                    value={o.align}
-                    onChange={(e) =>
-                      updateOverlay(o.id, { align: e.target.value as TextOverlay["align"] })
-                    }
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
-                  </select>
+                  <div>
+                    <label className="label text-xs">Position</label>
+                    <select
+                      className="select text-sm"
+                      value={o.position}
+                      onChange={(e) =>
+                        updateOverlay(o.id, { position: e.target.value as TextOverlay["position"] })
+                      }
+                    >
+                      <option value="top">Top</option>
+                      <option value="middle">Middle</option>
+                      <option value="bottom">Bottom</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label text-xs">Align</label>
+                    <select
+                      className="select text-sm"
+                      value={o.align}
+                      onChange={(e) =>
+                        updateOverlay(o.id, { align: e.target.value as TextOverlay["align"] })
+                      }
+                    >
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={o.colorHex}
-                    onChange={(e) => updateOverlay(o.id, { colorHex: e.target.value })}
-                  />
-                  <input
-                    type="range"
-                    min={3}
-                    max={18}
-                    step={0.5}
-                    value={o.sizePct}
-                    onChange={(e) =>
-                      updateOverlay(o.id, { sizePct: Number(e.target.value) })
-                    }
-                    className="flex-1"
-                  />
-                  <span className="text-xs">{o.sizePct}%</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-[color:var(--muted)]">Color</label>
+                    <input
+                      type="color"
+                      value={o.colorHex}
+                      onChange={(e) => updateOverlay(o.id, { colorHex: e.target.value })}
+                      className="w-8 h-8 rounded cursor-pointer border-0"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 flex-1">
+                    <label className="text-xs text-[color:var(--muted)]">Size</label>
+                    <input
+                      type="range"
+                      min={3}
+                      max={18}
+                      step={0.5}
+                      value={o.sizePct}
+                      onChange={(e) =>
+                        updateOverlay(o.id, { sizePct: Number(e.target.value) })
+                      }
+                      className="flex-1 accent-[color:var(--terracotta)]"
+                    />
+                    <span className="text-sm font-mono w-10">{o.sizePct}%</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <label>Show from</label>
+                <div className="flex items-center gap-2 text-sm">
+                  <label className="text-xs text-[color:var(--muted)]">Show from</label>
                   <input
                     type="number"
                     min={0}
@@ -412,9 +483,9 @@ export default function VideoEditor({
                     onChange={(e) =>
                       updateOverlay(o.id, { fromSec: Number(e.target.value) })
                     }
-                    className="input w-16 text-xs"
+                    className="input w-16 text-sm"
                   />
-                  <label>to</label>
+                  <label className="text-xs text-[color:var(--muted)]">to</label>
                   <input
                     type="number"
                     min={0}
@@ -424,47 +495,60 @@ export default function VideoEditor({
                     onChange={(e) =>
                       updateOverlay(o.id, { toSec: Number(e.target.value) })
                     }
-                    className="input w-16 text-xs"
+                    className="input w-16 text-sm"
                   />
+                  <span className="text-xs text-[color:var(--muted)]">seconds</span>
                 </div>
-                <div className="text-right">
+                <div className="text-right pt-2">
                   <button
-                    className="text-xs text-[color:var(--terracotta)] hover:underline"
+                    className="btn btn-danger text-xs"
                     onClick={() => removeOverlay(o.id)}
                   >
-                    Remove
+                    Remove overlay
                   </button>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="card p-4 space-y-2">
-            <label className="flex items-center gap-2 text-sm">
+          <div className="card p-5 space-y-3">
+            <label className="flex items-center gap-3 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={state.showCtaButton}
                 onChange={(e) =>
                   setState((s) => ({ ...s, showCtaButton: e.target.checked }))
                 }
+                className="w-5 h-5 accent-[color:var(--terracotta)]"
               />
-              Render CTA button — <b>{(ad.creative.cta ?? "LEARN_MORE").replace("_", " ")}</b>
+              <span>Show CTA button</span>
+              <span className="pill pill-green">{(ad.creative.cta ?? "LEARN_MORE").replace("_", " ")}</span>
             </label>
-            <p className="text-xs text-[color:var(--muted)]">
-              The CTA on the Meta ad object is the one that actually converts.
-              This is a visual reinforcement only.
+            <p className="text-xs text-[color:var(--muted)] leading-relaxed">
+              This is a visual reinforcement only. The actual CTA on the Meta ad object is what converts.
             </p>
           </div>
 
           <button
-            className="btn btn-primary w-full justify-center"
+            className="btn btn-primary w-full justify-center text-base py-3"
             onClick={onSave}
             disabled={busy !== null}
           >
-            {busy === "saving" ? "Exporting…" : "Export & save"}
+            {busy === "saving" ? "⏳ Exporting…" : "💾 Export & save"}
           </button>
+          
+          <button
+            className="btn btn-ghost w-full justify-center text-base py-3 border-2 border-dashed"
+            onClick={onRegenerateVideo}
+            disabled={busy !== null || sourceIsImage}
+          >
+            {busy === "regenerating" ? "🔄 Regenerating video…" : "🎬 Regenerate video for this aspect ratio"}
+          </button>
+          
           {toast && (
-            <div className="text-xs text-[color:var(--muted)] italic">{toast}</div>
+            <div className={`text-sm p-3 rounded-lg ${toast.includes("hit a snag") ? "bg-[#f2d3cb] text-[#6b2415]" : "bg-[#e0ead3] text-[#2e4a1f]"}`}>
+              {toast}
+            </div>
           )}
         </aside>
       </div>

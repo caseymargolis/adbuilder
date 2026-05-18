@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClient, upsertClient } from "@/lib/db";
 import { generateReport } from "@/lib/reports";
+import { hasLiveAds } from "@/lib/ad-utils";
 
 /**
  * On-demand report generation. Used by the workspace UI's "Client report"
@@ -18,6 +19,13 @@ export async function POST(req: Request) {
   };
   const client = await getClient(clientId);
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (!hasLiveAds(client)) {
+    return NextResponse.json(
+      { error: "Reports require at least one live ad." },
+      { status: 400 },
+    );
+  }
 
   const report = await generateReport({
     client,

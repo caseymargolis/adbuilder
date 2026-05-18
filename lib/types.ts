@@ -172,6 +172,9 @@ export interface ClientRecord {
   reports?: Report[];
   /** When true, daily optimize auto-applies; scheduled items execute. */
   autopilot?: boolean;
+  /** Per-agent chat threads persisted on the backend. Keys are agent ids. */
+  chatThreads?: Record<string, Array<{ role: "user" | "assistant"; content: string }>>;
+  chatUpdatedAt?: string;
   createdAt: string;
   analysis?: WebsiteAnalysis;
   ads: AdRecord[];

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { AGENTS, type AgentDef, type AgentId } from "@/lib/agents";
 
 interface Message {
@@ -42,6 +44,101 @@ export default function ChatPanel({
 
   const messages = threads[agentId];
   const agent = AGENTS[agentId];
+
+  // Hydrate from backend, then localStorage fallback
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/history?clientId=${clientId}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            threads?: Record<AgentId, Message[]>;
+          };
+          if (data.threads) {
+            const withGreetings = Object.fromEntries(
+              Object.values(AGENTS).map((a) => {
+                const existing = data.threads?.[a.id] ?? [];
+                return [
+                  a.id,
+                  existing.length > 0
+                    ? existing
+                    : ([{ role: "assistant", content: greetingFor(a, clientName) }] as Message[]),
+                ];
+              }),
+            ) as Record<AgentId, Message[]>;
+            setThreads(withGreetings);
+            return;
+          }
+        }
+      } catch {
+        /* fall through to localStorage */
+      }
+      try {
+        const raw = localStorage.getItem(`chat:${clientId}`);
+        if (!raw) return;
+        const saved = JSON.parse(raw) as Record<AgentId, Message[]> | null;
+        if (saved && typeof saved === "object") {
+          const withGreetings = Object.fromEntries(
+            Object.values(AGENTS).map((a) => {
+              const existing = saved[a.id] ?? [];
+              return [
+                a.id,
+                existing.length > 0
+                  ? existing
+                  : ([{ role: "assistant", content: greetingFor(a, clientName) }] as Message[]),
+              ];
+            }),
+          ) as Record<AgentId, Message[]>;
+          setThreads(withGreetings);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
+
+  // Persist to localStorage and backend on change (debounced)
+  useEffect(() => {
+    try {
+      localStorage.setItem(`chat:${clientId}`, JSON.stringify(threads));
+    } catch {
+      // ignore save errors
+    }
+    const t = setTimeout(() => {
+      fetch("/api/chat/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, threads }),
+      }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [threads, clientId]);
+
+  // Persist per-agent audience selection in localStorage
+  useEffect(() => {
+    try {
+      const key = `chatMeta:${clientId}`;
+      const meta = JSON.parse(localStorage.getItem(key) || "{}") as Record<AgentId, { audience: "pm" | "client" }>;
+      const next = { ...meta, [agentId]: { audience } };
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  }, [agentId, audience, clientId]);
+
+  // Hydrate audience per-agent on agent switch
+  useEffect(() => {
+    try {
+      const key = `chatMeta:${clientId}`;
+      const meta = JSON.parse(localStorage.getItem(key) || "{}") as Record<AgentId, { audience: "pm" | "client" }>;
+      const a = meta[agentId]?.audience;
+      if (a && a !== audience) setAudience(a);
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -154,7 +251,10 @@ export default function ChatPanel({
             <button
               key={a.id}
               type="button"
-              onClick={() => setAgentId(a.id)}
+              onClick={() => {
+                if (busy) return; // prevent switching during stream
+                setAgentId(a.id);
+              }}
               className={`pill text-[11px] ${
                 a.id === agentId ? "" : "opacity-60"
               }`}
@@ -167,6 +267,7 @@ export default function ChatPanel({
                   : undefined
               }
               title={a.bio}
+              disabled={busy}
             >
               {a.name}
             </button>
@@ -201,7 +302,26 @@ export default function ChatPanel({
                 : "bg-[color:var(--bg)] border border-[color:var(--line)] mr-6 rounded-2xl rounded-bl-sm px-3 py-2"
             } whitespace-pre-wrap leading-relaxed`}
           >
-            {m.content || (busy && i === messages.length - 1 ? "…" : "")}
+            {m.content ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ node, ...props }) => (
+                    // eslint-disable-next-line react/jsx-no-target-blank
+                    <a {...props} target="_blank" rel="noopener noreferrer" />
+                  ),
+                  code: ({ inline, className, children, ...props }) => (
+                    <code className={`${className ?? ""} bg-black/10 px-1 rounded`} {...props}>
+                      {children}
+                    </code>
+                  ),
+                }}
+              >
+                {m.content}
+              </ReactMarkdown>
+            ) : busy && i === messages.length - 1 ? (
+              "…"
+            ) : null}
           </div>
         ))}
       </div>
@@ -210,7 +330,9 @@ export default function ChatPanel({
           <button
             key={s}
             className="text-[11px] px-2 py-1 rounded-full bg-[color:var(--bg)] border border-[color:var(--line)] text-[color:var(--muted)] hover:text-[color:var(--ink)]"
-            onClick={() => setInput(s)}
+            onClick={() =>
+              setInput((prev) => (prev ? prev.replace(/\s*$/, " ") + s : s))
+            }
             type="button"
           >
             {s}

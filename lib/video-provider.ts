@@ -17,8 +17,50 @@
  * and workflow still demo end-to-end without spending money.
  */
 
-import { askJson } from "./anthropic";
-import { VIDEO_ROUTER_SYSTEM, VIDEO_PROMPT_SYSTEM } from "./prompts";
+import { askJson } from "@/lib/anthropic";
+import type {
+  VideoRouteDecision,
+  VideoProviderId,
+  GeneratedVideo,
+} from "@/lib/types";
+import { KlingAPI } from "kling-api";
+
+const VIDEO_ROUTER_SYSTEM = `You are a video generation router for an ad platform. You will be given a brief and must decide which video generation provider to use. You can choose from the following providers:
+  - veo-3
+  - sora-2
+  - runway-gen-4
+  - kling-2
+
+IMPORTANT: You must respond with valid JSON in this exact format:
+{
+  "provider": "veo-3",
+  "reason": "why this provider is best",
+  "needsEditorPass": true,
+  "refinedPrompt": "the refined video prompt",
+  "recommendedAspect": "9:16",
+  "recommendedDurationSec": 5
+}
+
+The aspect ratio must be one of: "1:1", "9:16", "16:9".
+The duration should be an integer between 4 and 12.
+Do not include any other text, markdown, or formatting outside the JSON object.`;
+
+const VIDEO_PROMPT_SYSTEM = `You are a video prompt writer for an ad platform. You will be given a brief and must write a video prompt.
+
+CRITICAL GUIDELINES FOR HIGH-QUALITY VIDEO GENERATION:
+1. AVOID TEXT IN SCENES: Video AI models struggle with readable text. Focus on visual storytelling, product shots, and lifestyle imagery instead of text overlays or signs with text.
+2. PREVENT MORPHING: Describe clear, stable scenes with consistent subjects. Avoid describing transformations, shape-shifting, or objects changing form. Focus on smooth camera movements and stable compositions.
+3. SPECIFIC VISUAL DETAILS: Use concrete visual descriptors (colors, lighting, camera angles, composition) rather than abstract concepts.
+4. STABLE COMPOSITIONS: Describe scenes with clear foreground/background separation and stable framing to reduce AI hallucinations.
+5. MINIMIZE COMPLEX MOTION: Focus on one or two key actions per scene rather than complex multi-action sequences that can morph unpredictably.
+6. BRAND CONSISTENCY: If brand colors are provided, emphasize them in lighting, props, or environment to maintain brand identity without text.
+
+IMPORTANT: You must respond with valid JSON in this exact format:
+{
+  "videoPrompt": "your video prompt text here"
+}
+
+Do not include any other text, markdown, or formatting outside the JSON object. The video prompt should be a single paragraph suitable for a video generation AI.`;
 
 export type VideoProviderId =
   | "veo-3"
@@ -31,7 +73,7 @@ export interface VideoRouteDecision {
   reason: string;
   needsEditorPass: boolean;
   refinedPrompt: string;
-  recommendedAspect: "1:1" | "4:5" | "9:16" | "16:9";
+  recommendedAspect: "1:1" | "9:16" | "16:9";
   recommendedDurationSec: number;
 }
 
@@ -56,6 +98,7 @@ export async function writeVideoPrompt(args: {
   proofPoints?: string[];
   differentiators?: string[];
   brandColors?: string[];
+  aspectRatio?: string;
 }): Promise<{ videoPrompt: string }> {
   const user = [
     `ANGLE: ${args.angle}`,
@@ -74,6 +117,7 @@ export async function writeVideoPrompt(args: {
       ? `BRAND COLORS: ${args.brandColors.join(", ")}`
       : "",
     args.imagePrompt ? `PAIRED STATIC CONCEPT: ${args.imagePrompt}` : "",
+    args.aspectRatio ? `TARGET ASPECT RATIO: ${args.aspectRatio}` : "",
     "",
     "Write the video prompt.",
   ]
@@ -92,17 +136,18 @@ export async function routeVideo(args: {
   angle: string;
   hypothesis: string;
   brandVoice: string;
-  aspectHint?: "1:1" | "4:5" | "9:16" | "16:9";
+  aspectHint?: "1:1" | "9:16" | "16:9";
 }): Promise<VideoRouteDecision> {
   const user = [
     "BRIEF:",
     `- Angle: ${args.angle}`,
     `- Hypothesis: ${args.hypothesis}`,
     `- Brand voice: ${args.brandVoice}`,
-    args.aspectHint ? `- Placement hint: ${args.aspectHint}` : "",
+    args.aspectHint ? `- Target aspect ratio: ${args.aspectHint}` : "",
     `- Prompt: ${args.videoPrompt}`,
     "",
     "Pick the best provider, aspect, and duration.",
+    args.aspectHint ? `IMPORTANT: The user has requested the ${args.aspectHint} aspect ratio. Use this as the recommendedAspect in your response.` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -116,21 +161,70 @@ export async function routeVideo(args: {
 /**
  * Generate a video. Dispatches to the chosen provider or returns a tagged
  * placeholder that unblocks the editor pass.
+ *
+ * If the chosen provider fails, tries other providers as fallback.
  */
 export async function generateVideo(args: {
   decision: VideoRouteDecision;
 }): Promise<GeneratedVideo> {
   const { decision } = args;
+  console.log(`[VideoGen] Attempting provider: ${decision.provider}`);
+
+  // Try the chosen provider first
+  let result: GeneratedVideo;
   switch (decision.provider) {
     case "veo-3":
-      return callVeo(decision);
+      result = await callVeo(decision);
+      break;
     case "sora-2":
-      return callSora(decision);
+      result = await callSora(decision);
+      break;
     case "runway-gen-4":
-      return callRunway(decision);
+      result = await callRunway(decision);
+      break;
     case "kling-2":
-      return callKling(decision);
+      result = await callKling(decision);
+      break;
   }
+
+  // If the chosen provider succeeded, return it
+  if (!result.mock) {
+    console.log(`[VideoGen] Success with provider: ${result.provider}`);
+    return result;
+  }
+
+  // Otherwise, try other providers as fallback
+  console.log(`[VideoGen] ${decision.provider} returned placeholder, trying fallback providers...`);
+  const fallbackOrder: VideoProviderId[] = [
+    "runway-gen-4",
+    "sora-2",
+    "veo-3",
+  ];
+  for (const provider of fallbackOrder) {
+    if (provider === decision.provider) continue; // skip already-tried
+    console.log(`[VideoGen] Trying fallback: ${provider}`);
+    switch (provider) {
+      case "veo-3":
+        result = await callVeo(decision);
+        break;
+      case "sora-2":
+        result = await callSora(decision);
+        break;
+      case "runway-gen-4":
+        result = await callRunway(decision);
+        break;
+      case "kling-2":
+        result = await callKling(decision);
+        break;
+    }
+    if (!result.mock) {
+      console.log(`[VideoGen] Success with fallback provider: ${result.provider}`);
+      return result;
+    }
+  }
+
+  console.error("[VideoGen] All providers failed, returning placeholder");
+  return result;
 }
 
 // --- Providers ---
@@ -141,7 +235,10 @@ export async function generateVideo(args: {
 
 async function callVeo(decision: VideoRouteDecision): Promise<GeneratedVideo> {
   const key = process.env.GOOGLE_API_KEY;
-  if (!key) return placeholder(decision);
+  if (!key) {
+    console.error("[VideoGen] Veo: no GOOGLE_API_KEY");
+    return placeholder(decision);
+  }
   try {
     // Gemini long-running-operations surface for Veo 3
     const startRes = await fetch(
@@ -159,10 +256,17 @@ async function callVeo(decision: VideoRouteDecision): Promise<GeneratedVideo> {
         }),
       },
     );
-    if (!startRes.ok) return placeholder(decision);
+    if (!startRes.ok) {
+      const body = await startRes.text().catch(() => "<no body>");
+      console.error(`[VideoGen] Veo HTTP ${startRes.status}: ${body}`);
+      return placeholder(decision);
+    }
     const startData = (await startRes.json()) as { name?: string };
     const op = startData.name;
-    if (!op) return placeholder(decision);
+    if (!op) {
+      console.error("[VideoGen] Veo: no operation name in response");
+      return placeholder(decision);
+    }
     for (let i = 0; i < 60; i++) {
       await sleep(5000);
       const poll = await fetch(
@@ -174,7 +278,10 @@ async function callVeo(decision: VideoRouteDecision): Promise<GeneratedVideo> {
       };
       if (data.done) {
         const uri = data.response?.videos?.[0]?.videoUri;
-        if (!uri) return placeholder(decision);
+        if (!uri) {
+          console.error("[VideoGen] Veo: no videoUri in completed response");
+          return placeholder(decision);
+        }
         return {
           url: uri,
           provider: "veo-3",
@@ -184,19 +291,28 @@ async function callVeo(decision: VideoRouteDecision): Promise<GeneratedVideo> {
         };
       }
     }
-  } catch {
-    // fall through to placeholder
+    console.error("[VideoGen] Veo: polling timed out after 5 minutes");
+  } catch (err) {
+    console.error("[VideoGen] Veo exception:", err);
   }
   return placeholder(decision);
 }
 
 async function callSora(decision: VideoRouteDecision): Promise<GeneratedVideo> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return placeholder(decision);
+  if (!key) {
+    console.error("[VideoGen] Sora: no OPENAI_API_KEY");
+    return placeholder(decision);
+  }
   try {
+    // Create an AbortController with a longer timeout for Sora
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
     const start = await fetch("https://api.openai.com/v1/videos", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         model: "sora-2",
         prompt: decision.refinedPrompt,
@@ -205,46 +321,106 @@ async function callSora(decision: VideoRouteDecision): Promise<GeneratedVideo> {
             ? "720x1280"
             : decision.recommendedAspect === "1:1"
               ? "1024x1024"
-              : decision.recommendedAspect === "4:5"
-                ? "864x1080"
-                : "1280x720",
+              : "1280x720",
         // Sora only accepts string values "4", "8", or "12"
         seconds: decision.recommendedDurationSec <= 4 ? "4" : decision.recommendedDurationSec <= 8 ? "8" : "12",
       }),
     });
-    if (!start.ok) return placeholder(decision);
-    const job = (await start.json()) as { id: string; status: string };
-    for (let i = 0; i < 60; i++) {
-      await sleep(5000);
-      const poll = await fetch(`https://api.openai.com/v1/videos/${job.id}`, {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      const data = (await poll.json()) as {
-        status: string;
-        output?: Array<{ url: string; type: string }>;
-      };
-      if (data.status === "completed") {
-        const url = data.output?.find((o) => o.type === "video")?.url;
-        if (!url) return placeholder(decision);
-        return {
-          url,
-          provider: "sora-2",
-          decision,
-          durationSec: decision.recommendedDurationSec,
-          mock: false,
-        };
-      }
-      if (data.status === "failed" || data.status === "cancelled") break;
+    clearTimeout(timeoutId);
+
+    if (!start.ok) {
+      const body = await start.text().catch(() => "<no body>");
+      console.error(`[VideoGen] Sora HTTP ${start.status}: ${body}`);
+      return placeholder(decision);
     }
-  } catch {
-    // fall through
+    const job = (await start.json()) as { id: string; status: string; error?: any };
+    console.log("[VideoGen] Sora job submitted:", JSON.stringify(job, null, 2));
+    if (job.error) {
+      console.error("[VideoGen] Sora job submission error:", job.error);
+      return placeholder(decision);
+    }
+    
+    let lastProgress = -1;
+    let stuckCount = 0;
+    
+    for (let i = 0; i < 90; i++) { // Increased to 90 attempts (7.5 minutes)
+      await sleep(5000);
+      
+      const pollController = new AbortController();
+      const pollTimeoutId = setTimeout(() => pollController.abort(), 30000); // 30 second timeout per poll
+      
+      try {
+        const poll = await fetch(`https://api.openai.com/v1/videos/${job.id}`, {
+          headers: { Authorization: `Bearer ${key}` },
+          signal: pollController.signal,
+        });
+        clearTimeout(pollTimeoutId);
+
+        const data = (await poll.json()) as {
+          status: string;
+          output?: Array<{ url: string; type: string }>;
+          error?: any;
+          progress?: number;
+        };
+        
+        // Check if progress is stuck
+        if (data.progress !== undefined) {
+          if (data.progress === lastProgress) {
+            stuckCount++;
+            console.warn(`[VideoGen] Sora progress stuck at ${data.progress}% for ${stuckCount} consecutive polls`);
+            if (stuckCount >= 12) { // Stuck for 1 minute (12 * 5s)
+              console.error("[VideoGen] Sora job appears stuck, falling back");
+              break;
+            }
+          } else {
+            stuckCount = 0;
+            lastProgress = data.progress;
+          }
+        }
+        
+        console.log(`[VideoGen] Sora poll response (attempt ${i + 1}, progress: ${data.progress || 'N/A'}%):`, JSON.stringify(data, null, 2));
+        
+        if (data.status === "completed") {
+          const url = data.output?.find((o) => o.type === "video")?.url;
+          if (!url) {
+            console.error("[VideoGen] Sora: no video URL in completed response. Output:", data.output);
+            return placeholder(decision);
+          }
+          return {
+            url,
+            provider: "sora-2",
+            decision,
+            durationSec: decision.recommendedDurationSec,
+            mock: false,
+          };
+        }
+        if (data.status === "failed" || data.status === "cancelled") {
+          console.error(`[VideoGen] Sora job ${job.id} status: ${data.status}`);
+          break;
+        }
+      } catch (pollErr: any) {
+        clearTimeout(pollTimeoutId);
+        if (pollErr.name === 'AbortError') {
+          console.error(`[VideoGen] Sora poll timeout on attempt ${i + 1}`);
+          // Continue polling on timeout
+          continue;
+        }
+        throw pollErr;
+      }
+    }
+    console.error("[VideoGen] Sora: polling timed out after 7.5 minutes");
+  } catch (err) {
+    console.error("[VideoGen] Sora exception:", err);
   }
   return placeholder(decision);
 }
 
 async function callRunway(decision: VideoRouteDecision): Promise<GeneratedVideo> {
   const key = process.env.RUNWAY_API_KEY;
-  if (!key) return placeholder(decision);
+  if (!key) {
+    console.error("[VideoGen] Runway: no RUNWAY_API_KEY");
+    return placeholder(decision);
+  }
   try {
     // Runway Gen-4 text-to-video
     const start = await fetch("https://api.dev.runwayml.com/v1/text_to_video", {
@@ -266,7 +442,11 @@ async function callRunway(decision: VideoRouteDecision): Promise<GeneratedVideo>
         duration: decision.recommendedDurationSec <= 5 ? 5 : 10,
       }),
     });
-    if (!start.ok) return placeholder(decision);
+    if (!start.ok) {
+      const body = await start.text().catch(() => "<no body>");
+      console.error(`[VideoGen] Runway HTTP ${start.status}: ${body}`);
+      return placeholder(decision);
+    }
     const job = (await start.json()) as { id: string };
     for (let i = 0; i < 60; i++) {
       await sleep(5000);
@@ -292,62 +472,66 @@ async function callRunway(decision: VideoRouteDecision): Promise<GeneratedVideo>
           mock: false,
         };
       }
-      if (data.status === "FAILED") break;
+      if (data.status === "FAILED") {
+        console.error(`[VideoGen] Runway job ${job.id} failed`);
+        break;
+      }
     }
-  } catch {
-    // fall through
+    console.error("[VideoGen] Runway: polling timed out after 5 minutes");
+  } catch (err) {
+    console.error("[VideoGen] Runway exception:", err);
   }
   return placeholder(decision);
 }
 
 async function callKling(decision: VideoRouteDecision): Promise<GeneratedVideo> {
   const key = process.env.KLING_API_KEY;
-  if (!key) return placeholder(decision);
-  try {
-    const start = await fetch(
-      "https://api.klingai.com/v1/videos/text2video",
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model_name: "kling-v2-master",
-          prompt: decision.refinedPrompt,
-          aspect_ratio: decision.recommendedAspect,
-          duration: decision.recommendedDurationSec <= 5 ? "5" : "10",
-        }),
-      },
-    );
-    if (!start.ok) return placeholder(decision);
-    const job = (await start.json()) as { data: { task_id: string } };
-    const taskId = job.data.task_id;
-    for (let i = 0; i < 60; i++) {
-      await sleep(5000);
-      const poll = await fetch(
-        `https://api.klingai.com/v1/videos/text2video/${taskId}`,
-        { headers: { Authorization: `Bearer ${key}` } },
-      );
-      const data = (await poll.json()) as {
-        data: {
-          task_status: string;
-          task_result?: { videos?: Array<{ url: string }> };
-        };
-      };
-      const s = data.data.task_status;
-      if (s === "succeed" && data.data.task_result?.videos?.[0]) {
-        return {
-          url: data.data.task_result.videos[0].url,
-          provider: "kling-2",
-          decision,
-          durationSec: decision.recommendedDurationSec,
-          mock: false,
-        };
-      }
-      if (s === "failed") break;
-    }
-  } catch {
-    // fall through
+  if (!key) {
+    console.error("[VideoGen] Kling: no KLING_API_KEY");
+    return placeholder(decision);
   }
-  return placeholder(decision);
+
+  // Parse KLING_API_KEY in format "accessKey:secretKey"
+  const [accessKey, secretKey] = key.split(":");
+  if (!accessKey || !secretKey) {
+    console.error("[VideoGen] Kling: KLING_API_KEY must be in format 'accessKey:secretKey'");
+    return placeholder(decision);
+  }
+
+  try {
+    const api = new KlingAPI({ accessKey, secretKey });
+
+    console.log("[VideoGen] Kling: submitting text-to-video task");
+    const task = await api.textToVideo({
+      prompt: decision.refinedPrompt,
+      model_name: "kling-v2-master",
+      aspect_ratio: decision.recommendedAspect,
+      duration: decision.recommendedDurationSec <= 5 ? "5" : "10",
+    });
+
+    const taskId = task.data.task_id;
+    console.log(`[VideoGen] Kling: task ${taskId} submitted, waiting for result`);
+
+    const result = await api.waitForVideoResult(taskId);
+    const url = result.data.task_result?.videos?.[0]?.url;
+
+    if (!url) {
+      console.error("[VideoGen] Kling: no video URL in result");
+      return placeholder(decision);
+    }
+
+    console.log(`[VideoGen] Kling: success, video URL: ${url}`);
+    return {
+      url,
+      provider: "kling-2",
+      decision,
+      durationSec: decision.recommendedDurationSec,
+      mock: false,
+    };
+  } catch (err) {
+    console.error("[VideoGen] Kling exception:", err);
+    return placeholder(decision);
+  }
 }
 
 function placeholder(decision: VideoRouteDecision): GeneratedVideo {
