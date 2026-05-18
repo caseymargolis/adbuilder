@@ -406,7 +406,7 @@ Output ONLY a JSON object, no prose:
   "reason": "1 sentence. Cite the specific rule that matched and why.",
   "needsEditorPass": true,
   "refinedPrompt": "The video prompt, rewritten for the chosen provider. Max 500 chars. No text/CTA in frame.",
-  "recommendedAspect": "1:1" | "4:5" | "9:16" | "16:9",
+  "recommendedAspect": "1:1" | "9:16" | "16:9",
   "recommendedDurationSec": 4 | 6 | 8 | 10 | 12
 }
 `.trim();

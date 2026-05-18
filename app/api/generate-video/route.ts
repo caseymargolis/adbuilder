@@ -7,7 +7,7 @@ import { putBlob } from "@/lib/blob-storage";
  * Generate a video variant for an existing ad.
  *
  *   POST /api/generate-video
- *   { clientId, adId, aspectHint?: "1:1" | "4:5" | "9:16" | "16:9" }
+ *   { clientId, adId, aspectHint?: "1:1" | "9:16" | "16:9" }
  *
  * Writes a video prompt (Claude), routes to the best provider, calls it, and
  * saves the resulting video on the ad record. Video generation is a distinct
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const { clientId, adId, aspectHint } = (await req.json()) as {
     clientId: string;
     adId: string;
-    aspectHint?: "1:1" | "4:5" | "9:16" | "16:9";
+    aspectHint?: "1:1" | "9:16" | "16:9";
   };
   const client = await getClient(clientId);
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
