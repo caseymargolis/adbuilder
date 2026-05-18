@@ -310,7 +310,7 @@ export default function ChatPanel({
                     // eslint-disable-next-line react/jsx-no-target-blank
                     <a {...props} target="_blank" rel="noopener noreferrer" />
                   ),
-                  code: ({ inline, className, children, ...props }) => (
+                  code: ({ className, children, ...props }) => (
                     <code className={`${className ?? ""} bg-black/10 px-1 rounded`} {...props}>
                       {children}
                     </code>

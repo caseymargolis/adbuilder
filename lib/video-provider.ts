@@ -18,11 +18,6 @@
  */
 
 import { askJson } from "@/lib/anthropic";
-import type {
-  VideoRouteDecision,
-  VideoProviderId,
-  GeneratedVideo,
-} from "@/lib/types";
 import { KlingAPI } from "kling-api";
 
 const VIDEO_ROUTER_SYSTEM = `You are a video generation router for an ad platform. You will be given a brief and must decide which video generation provider to use. You can choose from the following providers:
