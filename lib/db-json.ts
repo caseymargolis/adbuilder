@@ -47,7 +47,9 @@ export async function listClients(): Promise<ClientRecord[]> {
   try {
     return JSON.parse(raw) as ClientRecord[];
   } catch (e) {
-    console.error("Failed to parse clients.json, returning empty array:", (e as Error).message);
+    console.error("Failed to parse clients.json, resetting file:", (e as Error).message);
+    // Reset corrupted file
+    await fs.writeFile(CLIENTS_FILE, "[]", "utf8");
     return [];
   }
 }

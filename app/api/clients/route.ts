@@ -17,8 +17,16 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  const clients = await listClients();
-  return NextResponse.json({ clients });
+  try {
+    const clients = await listClients();
+    return NextResponse.json({ clients });
+  } catch (e) {
+    console.error("Failed to load clients:", e);
+    return NextResponse.json(
+      { error: "Failed to load clients", clients: [] },
+      { status: 200 }, // Return empty array instead of 500
+    );
+  }
 }
 
 export async function POST(req: Request) {
